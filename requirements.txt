@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+sqlmodel
+httpx
+jinja2
+python-multipart
+g4f
+curl_cffi
+duckai
