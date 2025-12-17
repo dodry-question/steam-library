@@ -3,49 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <title>Моя Библиотека</title>
-    <!-- Возвращаем фавиконку -->
     <link rel="icon" type="image/png" href="/static/favicon.png?v=7">
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #1b2838; color: #c7d5e0; padding: 40px; margin: 0; }
         
-        /* --- ШАПКА --- */
-        .header { 
-            display: flex; justify-content: space-between; align-items: center; 
-            margin-bottom: 25px; background-color: #171a21; padding: 15px 20px;
-            border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5);
-        }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background-color: #171a21; padding: 15px 20px; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
         h1 { color: #ffffff; text-shadow: 0 0 5px #66c0f4; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
         
-        /* Профиль справа - ИСПРАВЛЕНА АВАТАРКА */
+        /* Профиль */
         .user-profile { display: flex; align-items: center; gap: 12px; height: 40px; justify-content: flex-end; }
-        .user-avatar { 
-            width: 40px; height: 40px; 
-            min-width: 40px; /* КРИТИЧНО ЧТОБЫ НЕ ПЛЮЩИЛО */
-            border-radius: 3px; border: 1px solid #66c0f4; 
-            object-fit: cover; flex-shrink: 0; /* ЗАПРЕЩАЕМ СЖАТИЕ */
-        }
+        /* Стили аватарки перенес в HTML inline для надежности */
         .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; text-align: right; }
         .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; white-space: nowrap; }
-        .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; transition: 0.2s; }
+        .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; }
         .btn-logout:hover { color: #ffffff; text-decoration: underline; }
         
-        /* Кнопка входа */
         .btn-steam { background-color: #2f363d; color: #e5e5e5; text-decoration: none; padding: 8px 16px; font-weight: bold; display: inline-flex; align-items: center; gap: 10px; border-radius: 2px; border: 1px solid #3e464e; transition: 0.2s; font-size: 14px; }
         .btn-steam:hover { background-color: #434953; color: white; border-color: #66c0f4; }
         .steam-icon { width: 18px; height: 18px; background: url('https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg') no-repeat center/contain; }
 
-        /* --- ПАНЕЛЬ УПРАВЛЕНИЯ --- */
-        .controls { 
-            background: #101216; padding: 15px; border-radius: 4px; margin-bottom: 30px; 
-            display: flex; align-items: center; gap: 10px; flex-wrap: wrap; 
-            position: sticky; top: 20px; z-index: 1000; box-shadow: 0 5px 20px rgba(0,0,0,0.8); border: 1px solid #3e464e;
-        }
-        
-        /* Группа справа */
+        .controls { background: #101216; padding: 15px; border-radius: 4px; margin-bottom: 30px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: sticky; top: 20px; z-index: 1000; box-shadow: 0 5px 20px rgba(0,0,0,0.8); border: 1px solid #3e464e; }
         .controls-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 
         button { padding: 8px 16px; border-radius: 2px; border: none; font-weight: normal; cursor: pointer; transition: 0.2s; color: white; font-size: 13px; font-family: 'Segoe UI', sans-serif; }
-        
         .btn-load { background: linear-gradient( to bottom, #a4d007 5%, #536904 95%); color: #fff; text-shadow: 1px 1px 0px rgba(0,0,0,0.3); font-weight: bold; }
         .btn-load:hover { background: linear-gradient( to bottom, #b6e608 5%, #536904 95%); }
         .btn-clear { background-color: #2a2d33; color: #aaa; }
@@ -55,13 +35,8 @@
         .input-friend { padding: 8px; border-radius: 2px 0 0 2px; border: 1px solid #3e464e; background: #222b35; color: white; width: 180px; }
         .btn-friend { border-radius: 0 2px 2px 0; background-color: #67c1f5; color: #1b2838; font-weight: bold; }
 
-        /* Галерея */
         .gallery { display: flex; flex-wrap: wrap; gap: 16px; }
-        .card { 
-            background-color: #16202d; width: 280px; position: relative; 
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.2);
-            animation: fadeIn 0.4s ease-out; display: flex; flex-direction: column;
-        }
+        .card { background-color: #16202d; width: 280px; position: relative; box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.2); animation: fadeIn 0.4s ease-out; display: flex; flex-direction: column; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         .card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.5); border-color: #66c0f4; z-index: 10; }
         
@@ -75,7 +50,6 @@
         .price { font-size: 13px; color: #acb2b8; }
         .discount-badge { background-color: #4c6b22; color: #beee11; padding: 1px 4px; border-radius: 1px; font-size: 13px; font-weight: bold; }
 
-        /* AI Section */
         #ai-block { display: none; background: #121418; border: 1px solid #6b2cf5; padding: 20px; margin-bottom: 30px; }
         #status-bar { margin-bottom: 20px; color: #66c0f4; font-size: 14px; font-weight: bold; min-height: 20px; }
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #66c0f4; border-top-color: transparent; border-radius: 50%; animation: spin 1s infinite; margin-right: 8px; vertical-align: text-bottom; }
@@ -92,8 +66,8 @@
                     <span class="user-name">{{ user_name }}</span>
                     <a href="/logout" class="btn-logout">Выйти</a>
                 </div>
-                <!-- Добавлен onerror чтобы не показывать битую картинку -->
-                <img src="{{ user_avatar }}" class="user-avatar" onerror="this.style.display='none'">
+                <!-- ЖЕСТКИЙ ФИКС АВАТАРКИ -->
+                <img src="{{ user_avatar }}" style="width: 40px; height: 40px; min-width: 40px; flex-shrink: 0; border-radius: 3px; border: 1px solid #66c0f4; object-fit: cover; margin-left: 10px;" onerror="this.style.display='none'">
             </div>
         {% else %}
             <a href="/login" class="btn-steam"><div class="steam-icon"></div>Sign in through Steam</a>
@@ -101,7 +75,6 @@
     </div>
 
     <div class="controls">
-        <!-- Кнопки -->
         {% if user_id %}
             <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
         {% endif %}
@@ -110,7 +83,6 @@
         <button onclick="sortGames('playtime')" class="btn-sort">По времени</button>
         <button onclick="sortGames('price')" class="btn-sort">По цене</button>
 
-        <!-- Справа -->
         <div class="controls-right">
             <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
             <div style="display: flex;">
@@ -161,16 +133,17 @@
 
                 statusBar.innerHTML = '<span class="spinner"></span>Получение списка игр...';
                 
+                console.log("Fetching:", url); // Лог для отладки
                 const listResp = await fetch(url);
-
+                
                 if (!listResp.ok) {
-                    throw new Error(`Server Error: ${listResp.status}`);
+                    throw new Error(`HTTP Error: ${listResp.status} ${listResp.statusText}`);
                 }
 
                 const listData = await listResp.json();
 
                 if (listData.error) {
-                    statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка: ${listData.error}. Профиль может быть скрыт.</span>`;
+                    statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка: ${listData.error}</span>`;
                     isProcessing = false;
                     if(btn) btn.disabled = false;
                     return;
@@ -224,7 +197,8 @@
 
             } catch (e) {
                 console.error(e);
-                statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка соединения (${e.message}). Проверьте API KEY или интернет.</span>`;
+                alert("Ошибка: " + e.message); // Показываем точную ошибку
+                statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка соединения: ${e.message}</span>`;
             } finally {
                 isProcessing = false;
                 if(btn) btn.disabled = false;
