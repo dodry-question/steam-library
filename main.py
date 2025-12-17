@@ -40,15 +40,20 @@ class BatchRequest(SQLModel):
     steam_ids: List[int]
     playtimes: Dict[int, int]
 
+# Используем абсолютный путь для БД или /tmp для cloud environments, 
+# но для простоты оставим локальный файл. Если на Koyeb ошибка записи - БД будет сбрасываться.
 sqlite_file_name = "games.db"
 engine = create_engine(f"sqlite:///{sqlite_file_name}")
 
 def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+    try:
+        SQLModel.metadata.create_all(engine)
+    except Exception as e:
+        print(f"⚠️ Ошибка создания БД (возможно нет прав на запись): {e}")
 
 app = FastAPI()
 if not os.path.exists("static"):
-    os.makedirs("static")
+    os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -77,6 +82,7 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int], 
         return {}
     
     ids_str = ",".join(map(str, app_ids))
+    # ВАЖНО: Используем HTTPS
     url = "https://store.steampowered.com/api/appdetails"
     params = {
         "appids": ids_str,
@@ -90,9 +96,9 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int], 
 
     async with STORE_API_LOCK:
         try:
-            # Важный sleep, чтобы не получать баны
+            # Важный sleep
             await asyncio.sleep(1.6)
-            resp = await client.get(url, params=params, headers=headers, timeout=20.0)
+            resp = await client.get(url, params=params, headers=headers, timeout=25.0)
             
             if resp.status_code == 429:
                 print("🛑 429 Rate Limit! Ждем 60 секунд...")
@@ -157,79 +163,98 @@ async def get_games_batch(payload: BatchRequest):
     return StreamingResponse(game_generator(payload), media_type="application/x-ndjson")
 
 async def game_generator(payload: BatchRequest):
-    ids = payload.steam_ids
-    playtimes = payload.playtimes
-    ids_to_fetch = []
-    cutoff = datetime.now() - timedelta(days=3)
+    try:
+        ids = payload.steam_ids
+        playtimes = payload.playtimes
+        ids_to_fetch = []
+        cutoff = datetime.now() - timedelta(days=3)
 
-    with Session(engine) as session:
-        existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
-        existing_map = {g.steam_id: g for g in existing_games}
+        # 1. Читаем из БД
+        with Session(engine) as session:
+            try:
+                existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
+                existing_map = {g.steam_id: g for g in existing_games}
+            except Exception as e:
+                print(f"Ошибка чтения БД: {e}")
+                existing_map = {}
 
-        for steam_id in ids:
-            game = existing_map.get(steam_id)
-            if game and game.last_updated > cutoff:
-                d = game.model_dump()
-                d['playtime_forever'] = playtimes.get(steam_id, 0)
-                yield json.dumps(d, ensure_ascii=False) + "\n"
-            else:
-                ids_to_fetch.append(steam_id)
+            for steam_id in ids:
+                game = existing_map.get(steam_id)
+                if game and game.last_updated > cutoff:
+                    d = game.model_dump()
+                    d['playtime_forever'] = playtimes.get(steam_id, 0)
+                    yield json.dumps(d, ensure_ascii=False) + "\n"
+                else:
+                    ids_to_fetch.append(steam_id)
 
-    if not ids_to_fetch:
-        return
+        if not ids_to_fetch:
+            return
 
-    CHUNK_SIZE = 25 
-    chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
+        CHUNK_SIZE = 25 
+        chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
 
-    async with httpx.AsyncClient() as client:
-        for chunk in chunks:
-            # 1. RU
-            ru_resp = await fetch_steam_store_data(client, chunk, 'ru')
-            games_to_save = []
-            kz_needed = []
+        # 2. Качаем из Steam
+        async with httpx.AsyncClient() as client:
+            for chunk in chunks:
+                # RU
+                ru_resp = await fetch_steam_store_data(client, chunk, 'ru')
+                games_to_save = []
+                kz_needed = []
 
-            for sid in chunk:
-                sid_str = str(sid)
-                data = ru_resp.get(sid_str, {})
-                if data.get('success'):
-                    game_obj = parse_game_obj(sid, data, 'ru')
-                    if game_obj.price_str != "Не продается":
-                        games_to_save.append(game_obj)
+                for sid in chunk:
+                    sid_str = str(sid)
+                    data = ru_resp.get(sid_str, {})
+                    if data.get('success'):
+                        game_obj = parse_game_obj(sid, data, 'ru')
+                        if game_obj.price_str != "Не продается":
+                            games_to_save.append(game_obj)
+                        else:
+                            kz_needed.append(sid)
                     else:
                         kz_needed.append(sid)
-                else:
-                    kz_needed.append(sid)
 
-            # 2. KZ
-            if kz_needed:
-                kz_resp = await fetch_steam_store_data(client, kz_needed, 'kz')
-                for sid in kz_needed:
-                    sid_str = str(sid)
-                    data = kz_resp.get(sid_str, {})
-                    game_obj = parse_game_obj(sid, data, 'kz')
-                    games_to_save.append(game_obj)
+                # KZ
+                if kz_needed:
+                    kz_resp = await fetch_steam_store_data(client, kz_needed, 'kz')
+                    for sid in kz_needed:
+                        sid_str = str(sid)
+                        data = kz_resp.get(sid_str, {})
+                        game_obj = parse_game_obj(sid, data, 'kz')
+                        games_to_save.append(game_obj)
 
-            # Сохранение и отдача
-            if games_to_save:
-                with Session(engine) as session:
-                    for g in games_to_save:
-                        existing = session.exec(select(Game).where(Game.steam_id == g.steam_id)).first()
-                        if existing:
-                            existing.name = g.name
-                            existing.image_url = g.image_url
-                            existing.genres = g.genres
-                            existing.price_str = g.price_str
-                            existing.discount_percent = g.discount_percent
-                            existing.last_updated = datetime.now()
-                            session.add(existing)
-                            d = existing.model_dump()
-                        else:
-                            session.add(g)
+                # Сохраняем и отдаем
+                if games_to_save:
+                    try:
+                        with Session(engine) as session:
+                            for g in games_to_save:
+                                existing = session.exec(select(Game).where(Game.steam_id == g.steam_id)).first()
+                                if existing:
+                                    existing.name = g.name
+                                    existing.image_url = g.image_url
+                                    existing.genres = g.genres
+                                    existing.price_str = g.price_str
+                                    existing.discount_percent = g.discount_percent
+                                    existing.last_updated = datetime.now()
+                                    session.add(existing)
+                                    d = existing.model_dump()
+                                else:
+                                    session.add(g)
+                                    d = g.model_dump()
+                                
+                                d['playtime_forever'] = playtimes.get(g.steam_id, 0)
+                                yield json.dumps(d, ensure_ascii=False) + "\n"
+                            session.commit()
+                    except Exception as e:
+                        print(f"Ошибка записи в БД: {e}")
+                        # Если БД сломалась, просто отдаем данные, не сохраняя (чтобы клиент увидел)
+                        for g in games_to_save:
                             d = g.model_dump()
-                        
-                        d['playtime_forever'] = playtimes.get(g.steam_id, 0)
-                        yield json.dumps(d, ensure_ascii=False) + "\n"
-                    session.commit()
+                            d['playtime_forever'] = playtimes.get(g.steam_id, 0)
+                            yield json.dumps(d, ensure_ascii=False) + "\n"
+
+    except Exception as e:
+        print(f"CRITICAL GENERATOR ERROR: {e}")
+        # Просто завершаем поток, не роняя сервер
 
 @app.get("/api/get-games-list")
 async def get_games_list(request: Request, user_id: Optional[str] = None):
@@ -242,14 +267,14 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
     if not target_id:
         return {"error": "User ID not found"}
 
-    url = f"http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={target_id}&format=json&include_appinfo=1&include_played_free_games=1"
+    # ВАЖНО: HTTPS
+    url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={target_id}&format=json&include_appinfo=1&include_played_free_games=1"
     
     async with httpx.AsyncClient() as client:
         try:
-            # Пытаемся получить имя, но не падаем, если ошибка
             p_name = target_id
             try:
-                user_url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={target_id}"
+                user_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={target_id}"
                 u_resp = await client.get(user_url, timeout=5.0)
                 u_data = u_resp.json()
                 if 'response' in u_data and 'players' in u_data['response'] and u_data['response']['players']:
@@ -257,20 +282,19 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
             except:
                 pass 
 
-            # Игры
-            resp = await client.get(url, timeout=10.0)
+            resp = await client.get(url, timeout=15.0)
             if resp.status_code != 200:
-                return {"error": f"Steam Error: {resp.status_code}"}
+                return {"error": f"Steam API Error: {resp.status_code}"}
 
             data = resp.json()
             if "response" in data and "games" in data["response"]:
                 games = [{"appid": g["appid"], "playtime": g.get("playtime_forever", 0)} for g in data["response"]["games"]]
                 return {"target_id": target_id, "target_name": p_name, "games": games}
             else:
-                return {"error": "Профиль скрыт или нет игр"}
+                return {"error": "Профиль скрыт или пуст"}
         except Exception as e:
             print(f"Error in get_games_list: {e}")
-            return {"error": "Ошибка сети или Steam API"}
+            return {"error": f"Server Error: {str(e)}"}
 
 async def resolve_steam_id(input_str: str) -> Optional[str]:
     input_str = input_str.strip()
@@ -278,7 +302,8 @@ async def resolve_steam_id(input_str: str) -> Optional[str]:
         return input_str
     
     clean = input_str.split('/')[-1] if '/' not in input_str else input_str.rstrip('/').split('/')[-1]
-    url = f"http://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean}"
+    # ВАЖНО: HTTPS
+    url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean}"
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get(url)
@@ -334,7 +359,7 @@ async def recommend(request: Request):
     except Exception as e:
         return {"content": {"error": str(e)}}
 
-# --- Auth System (ИСПРАВЛЕНО) ---
+# --- Auth System ---
 @app.get("/login")
 def login():
     params = {
@@ -354,11 +379,11 @@ async def auth(request: Request):
     if "openid.identity" in params:
         sid = params["openid.identity"].split("/")[-1]
         
-        # Получаем инфо о пользователе для куки
         user_name = "Steam User"
         user_avatar = ""
         try:
-            api_url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={sid}"
+            # ВАЖНО: HTTPS
+            api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={sid}"
             async with httpx.AsyncClient() as client:
                 resp = await client.get(api_url)
                 data = resp.json()
@@ -370,7 +395,6 @@ async def auth(request: Request):
 
         resp = RedirectResponse("/")
         resp.set_cookie("user_steam_id", sid)
-        # Кодируем имя, чтобы не было ошибок с русскими буквами
         resp.set_cookie("user_name", quote(user_name))
         resp.set_cookie("user_avatar", user_avatar)
         return resp
@@ -405,4 +429,5 @@ def index(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
+    # 0.0.0.0 важно для Koyeb/Docker
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

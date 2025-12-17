@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Моя Библиотека</title>
-    <!-- Возвращаем твою фавиконку -->
+    <!-- Возвращаем фавиконку -->
     <link rel="icon" type="image/png" href="/static/favicon.png?v=7">
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #1b2838; color: #c7d5e0; padding: 40px; margin: 0; }
@@ -16,15 +16,20 @@
         }
         h1 { color: #ffffff; text-shadow: 0 0 5px #66c0f4; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
         
-        /* Профиль справа */
-        .user-profile { display: flex; align-items: center; gap: 12px; height: 40px; }
-        .user-avatar { width: 38px; height: 38px; border-radius: 3px; border: 1px solid #66c0f4; object-fit: cover; }
+        /* Профиль справа - ИСПРАВЛЕНА АВАТАРКА */
+        .user-profile { display: flex; align-items: center; gap: 12px; height: 40px; justify-content: flex-end; }
+        .user-avatar { 
+            width: 40px; height: 40px; 
+            min-width: 40px; /* КРИТИЧНО ЧТОБЫ НЕ ПЛЮЩИЛО */
+            border-radius: 3px; border: 1px solid #66c0f4; 
+            object-fit: cover; flex-shrink: 0; /* ЗАПРЕЩАЕМ СЖАТИЕ */
+        }
         .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; text-align: right; }
-        .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; }
+        .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; white-space: nowrap; }
         .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; transition: 0.2s; }
         .btn-logout:hover { color: #ffffff; text-decoration: underline; }
         
-        /* Красивая кнопка входа */
+        /* Кнопка входа */
         .btn-steam { background-color: #2f363d; color: #e5e5e5; text-decoration: none; padding: 8px 16px; font-weight: bold; display: inline-flex; align-items: center; gap: 10px; border-radius: 2px; border: 1px solid #3e464e; transition: 0.2s; font-size: 14px; }
         .btn-steam:hover { background-color: #434953; color: white; border-color: #66c0f4; }
         .steam-icon { width: 18px; height: 18px; background: url('https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg') no-repeat center/contain; }
@@ -36,7 +41,7 @@
             position: sticky; top: 20px; z-index: 1000; box-shadow: 0 5px 20px rgba(0,0,0,0.8); border: 1px solid #3e464e;
         }
         
-        /* Группа справа (AI и Поиск) */
+        /* Группа справа */
         .controls-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 
         button { padding: 8px 16px; border-radius: 2px; border: none; font-weight: normal; cursor: pointer; transition: 0.2s; color: white; font-size: 13px; font-family: 'Segoe UI', sans-serif; }
@@ -50,7 +55,7 @@
         .input-friend { padding: 8px; border-radius: 2px 0 0 2px; border: 1px solid #3e464e; background: #222b35; color: white; width: 180px; }
         .btn-friend { border-radius: 0 2px 2px 0; background-color: #67c1f5; color: #1b2838; font-weight: bold; }
 
-        /* Галерея и Карточки */
+        /* Галерея */
         .gallery { display: flex; flex-wrap: wrap; gap: 16px; }
         .card { 
             background-color: #16202d; width: 280px; position: relative; 
@@ -87,7 +92,8 @@
                     <span class="user-name">{{ user_name }}</span>
                     <a href="/logout" class="btn-logout">Выйти</a>
                 </div>
-                <img src="{{ user_avatar }}" class="user-avatar">
+                <!-- Добавлен onerror чтобы не показывать битую картинку -->
+                <img src="{{ user_avatar }}" class="user-avatar" onerror="this.style.display='none'">
             </div>
         {% else %}
             <a href="/login" class="btn-steam"><div class="steam-icon"></div>Sign in through Steam</a>
@@ -95,7 +101,7 @@
     </div>
 
     <div class="controls">
-        <!-- СЛЕВА: Основные кнопки -->
+        <!-- Кнопки -->
         {% if user_id %}
             <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
         {% endif %}
@@ -104,7 +110,7 @@
         <button onclick="sortGames('playtime')" class="btn-sort">По времени</button>
         <button onclick="sortGames('price')" class="btn-sort">По цене</button>
 
-        <!-- СПРАВА: AI и Поиск -->
+        <!-- Справа -->
         <div class="controls-right">
             <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
             <div style="display: flex;">
@@ -134,7 +140,6 @@
             if (isProcessing) return;
             isProcessing = true;
             
-            // Если ищем "Мои игры", но не залогинены - ошибка
             if (!isFriend && "{{ user_id }}" === "None") {
                 alert("Сначала войдите через Steam!");
                 isProcessing = false;
@@ -157,6 +162,11 @@
                 statusBar.innerHTML = '<span class="spinner"></span>Получение списка игр...';
                 
                 const listResp = await fetch(url);
+
+                if (!listResp.ok) {
+                    throw new Error(`Server Error: ${listResp.status}`);
+                }
+
                 const listData = await listResp.json();
 
                 if (listData.error) {
@@ -214,7 +224,7 @@
 
             } catch (e) {
                 console.error(e);
-                statusBar.innerText = "Ошибка соединения (Network Error).";
+                statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка соединения (${e.message}). Проверьте API KEY или интернет.</span>`;
             } finally {
                 isProcessing = false;
                 if(btn) btn.disabled = false;
@@ -293,7 +303,7 @@
                     html += '</div>';
                     block.innerHTML = html;
                 } else {
-                    block.innerHTML = 'ИИ не дал рекомендаций (возможно, перегружен).';
+                    block.innerHTML = 'ИИ не дал рекомендаций.';
                 }
             } catch(e) {
                 block.innerHTML = 'Ошибка соединения с AI.';
