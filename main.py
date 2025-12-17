@@ -250,10 +250,10 @@ async def generate_games(payload: BatchRequest):
     requested_ids = payload.steam_ids
     playtimes = payload.playtimes
     
-    # 1. Сначала отдаем то, что УЖЕ есть в базе (Мгновенно)
     ids_to_fetch = []
     cutoff_time = datetime.now() - timedelta(hours=24)
 
+    # 1. Проверка базы данных
     with Session(engine) as session:
         existing_games = session.exec(select(Game).where(Game.steam_id.in_(requested_ids))).all()
         existing_map = {g.steam_id: g for g in existing_games}
@@ -261,7 +261,6 @@ async def generate_games(payload: BatchRequest):
         for sid in requested_ids:
             if sid in existing_map:
                 game_obj = existing_map[sid]
-                # Если данные свежие - отдаем сразу
                 if game_obj.last_updated and game_obj.last_updated > cutoff_time:
                     d = game_obj.model_dump()
                     d['playtime_forever'] = playtimes.get(sid, 0)
@@ -275,99 +274,125 @@ async def generate_games(payload: BatchRequest):
     if not ids_to_fetch:
         return
 
-    # 2. Настраиваем параллельность
-    # SEMAPHORE = 3 (Безопасно) или 5 (Быстро, но риск бана выше)
-    # Попробуй начать с 4
-    sem = asyncio.Semaphore(4) 
+    # --- ИЗМЕНЕНИЕ 1: Снижаем нагрузку до 2 потоков ---
+    # Это избавит от вечных "Sleep 10 sec"
+    sem = asyncio.Semaphore(2) 
 
     async with httpx.AsyncClient(timeout=45.0) as client:
         
-        # Вспомогательная функция для обработки одной пачки (10-20 игр)
         async def process_chunk(chunk_ids):
-            async with sem: # Ограничиваем кол-во одновременных потоков
-                # Шаг 1: RU
-                steam_data = await fetch_steam_batch(client, chunk_ids, 'ru')
-                region = 'ru'
-                
-                # Если в RU пусто или не продается, пробуем KZ
-                # (Упрощенная логика для скорости: проверяем только RU и KZ)
-                missing_in_ru = []
-                if not steam_data:
-                    missing_in_ru = chunk_ids
-                else:
-                    for sid in chunk_ids:
-                        s_sid = str(sid)
-                        if s_sid not in steam_data or not steam_data[s_sid]['success']:
-                            missing_in_ru.append(sid)
-                        else:
-                            # Проверяем "Не продается"
-                            temp = process_game_data(sid, steam_data[s_sid], 'ru')
-                            if temp.price_str == "Не продается":
-                                missing_in_ru.append(sid)
-
-                if missing_in_ru:
-                    kz_data = await fetch_steam_batch(client, missing_in_ru, 'kz')
-                    if kz_data:
-                        if not steam_data: steam_data = {}
-                        steam_data.update(kz_data)
-                        region = 'kz' # Смешанный режим, но цену возьмем последнюю
-
+            async with sem:
                 results = []
                 
-                # Шаг 2: Обработка и ТЕГИ
-                # Чтобы ускорить, мы не будем делать отдельный цикл для тегов.
-                # Мы возьмем ЖАНРЫ из JSON, которые уже скачались.
-                # ЕСЛИ ты очень хочешь парсить HTML-теги, это замедлит всё в разы.
-                # Ниже компромисс: если игр в пачке мало, грузим теги.
+                # --- ШАГ 1: Загружаем RU ---
+                ru_data = await fetch_steam_batch(client, chunk_ids, 'ru')
+                if not ru_data: ru_data = {}
+
+                # Список тех, кого нашли в RU
+                found_in_ru = []
                 
+                # Обрабатываем RU сразу, чтобы не перепутать валюты
                 for sid in chunk_ids:
                     s_sid = str(sid)
-                    if s_sid in steam_data and steam_data[s_sid]['success']:
-                        game_json = steam_data[s_sid]
-                        
-                        # --- ТЕГИ: Самое узкое место ---
-                        # Чтобы было быстрее, пробуем брать genres из JSON.
-                        # Раскомментируй строку ниже, если готов ждать ради тегов
-                        custom_tags = await fetch_store_tags(client, sid) 
-                        # custom_tags = None # Если хочешь скорость ракеты - оставь None
-                        
-                        with Session(engine) as session:
-                            new_data = process_game_data(sid, game_json, region, custom_tags)
-                            
-                            # Сохранение в БД (Upsert)
-                            existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
-                            if existing:
-                                existing.name = new_data.name
-                                existing.image_url = new_data.image_url
-                                existing.genres = new_data.genres
-                                existing.price_str = new_data.price_str
-                                existing.discount_percent = new_data.discount_percent
-                                existing.last_updated = datetime.now()
-                                session.add(existing)
-                                final_obj = existing
-                            else:
-                                session.add(new_data)
-                                final_obj = new_data
-                            
-                            session.commit()
-                            session.refresh(final_obj)
-                            
-                            d = final_obj.model_dump()
-                            d['playtime_forever'] = playtimes.get(sid, 0)
-                            d['last_updated'] = final_obj.last_updated.isoformat()
-                            results.append(d)
+                    if s_sid in ru_data and ru_data[s_sid]['success']:
+                        # Проверяем на "Не продается"
+                        temp_game = process_game_data(sid, ru_data[s_sid], 'ru')
+                        if temp_game.price_str != "Не продается":
+                            found_in_ru.append(sid)
+                            # Сохраняем RU версию
+                            with Session(engine) as session:
+                                existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
+                                if existing:
+                                    existing.name = temp_game.name
+                                    existing.image_url = temp_game.image_url
+                                    existing.genres = temp_game.genres
+                                    existing.price_str = temp_game.price_str
+                                    existing.discount_percent = temp_game.discount_percent
+                                    existing.last_updated = datetime.now()
+                                    session.add(existing)
+                                    final_obj = existing
+                                else:
+                                    session.add(temp_game)
+                                    final_obj = temp_game
+                                session.commit()
+                                session.refresh(final_obj)
+                                d = final_obj.model_dump()
+                                d['playtime_forever'] = playtimes.get(sid, 0)
+                                results.append(d)
+
+                # --- ШАГ 2: Загружаем KZ (для тех, кого нет в RU) ---
+                missing_ids = [sid for sid in chunk_ids if sid not in found_in_ru]
+                
+                if missing_ids:
+                    kz_data = await fetch_steam_batch(client, missing_ids, 'kz')
+                    if not kz_data: kz_data = {}
+                    
+                    found_in_kz = []
+                    for sid in missing_ids:
+                        s_sid = str(sid)
+                        if s_sid in kz_data and kz_data[s_sid]['success']:
+                             # Важно: тут передаем 'kz', чтобы применился курс валют
+                            temp_game = process_game_data(sid, kz_data[s_sid], 'kz')
+                            if temp_game.price_str != "Не продается":
+                                found_in_kz.append(sid)
+                                with Session(engine) as session:
+                                    existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
+                                    if existing:
+                                        # Обновляем только поля, id не трогаем
+                                        existing.name = temp_game.name
+                                        existing.image_url = temp_game.image_url
+                                        existing.genres = temp_game.genres
+                                        existing.price_str = temp_game.price_str
+                                        existing.discount_percent = temp_game.discount_percent
+                                        existing.last_updated = datetime.now()
+                                        session.add(existing)
+                                        final_obj = existing
+                                    else:
+                                        session.add(temp_game)
+                                        final_obj = temp_game
+                                    session.commit()
+                                    session.refresh(final_obj)
+                                    d = final_obj.model_dump()
+                                    d['playtime_forever'] = playtimes.get(sid, 0)
+                                    results.append(d)
+                    
+                    # --- ШАГ 3: Загружаем US (последний шанс) ---
+                    missing_ids_final = [sid for sid in missing_ids if sid not in found_in_kz]
+                    if missing_ids_final:
+                         us_data = await fetch_steam_batch(client, missing_ids_final, 'us')
+                         if us_data:
+                            for sid in missing_ids_final:
+                                s_sid = str(sid)
+                                if s_sid in us_data and us_data[s_sid]['success']:
+                                    temp_game = process_game_data(sid, us_data[s_sid], 'us')
+                                    with Session(engine) as session:
+                                        existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
+                                        if existing:
+                                            existing.name = temp_game.name
+                                            existing.image_url = temp_game.image_url
+                                            existing.genres = temp_game.genres
+                                            existing.price_str = temp_game.price_str
+                                            existing.discount_percent = temp_game.discount_percent
+                                            existing.last_updated = datetime.now()
+                                            session.add(existing)
+                                            final_obj = existing
+                                        else:
+                                            session.add(temp_game)
+                                            final_obj = temp_game
+                                        session.commit()
+                                        session.refresh(final_obj)
+                                        d = final_obj.model_dump()
+                                        d['playtime_forever'] = playtimes.get(sid, 0)
+                                        results.append(d)
+
                 return results
 
-        # 3. Разбиваем на пачки по 10 штук (было 10)
-        # Уменьшим пачку до 6, чтобы реже ловить ошибку 400
+        # Пачки по 6 штук - хороший баланс
         chunk_size = 6
         chunks = [ids_to_fetch[i:i + chunk_size] for i in range(0, len(ids_to_fetch), chunk_size)]
         
-        # Создаем задачи
         tasks = [asyncio.create_task(process_chunk(chunk)) for chunk in chunks]
         
-        # 4. Выдаем результат по мере готовности (as_completed)
-        # Это значит, что игры будут появляться на экране СРАЗУ, как только скачалась любая пачка
         for completed_task in asyncio.as_completed(tasks):
             try:
                 batch_results = await completed_task
