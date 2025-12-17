@@ -81,13 +81,10 @@ async def on_startup():
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 async def fetch_steam_batch(client: httpx.AsyncClient, app_ids: List[int], region: str):
-    """
-    Умная функция: пробует скачать пачкой. 
-    Если Steam выдает ошибку 400 (Bad Request), пробует скачать игры по одной.
-    """
     if not app_ids:
         return {}
     
+    # Базовый URL
     url = "https://store.steampowered.com/api/appdetails"
     params = {
         "appids": ",".join(map(str, app_ids)),
@@ -100,43 +97,46 @@ async def fetch_steam_batch(client: httpx.AsyncClient, app_ids: List[int], regio
     }
     
     try:
+        # Небольшая пауза, чтобы не дудосить, но параллельные запросы перекроют это ожидание
+        await asyncio.sleep(random.uniform(0.5, 1.0))
+        
         print(f"🌍 [STEAM API] Запрос {len(app_ids)} шт -> {region.upper()}...")
         resp = await client.get(url, params=params, headers=headers)
         
         if resp.status_code == 200:
             data = resp.json()
-            if data is None: return {}
-            return data
+            return data if data else {}
             
         elif resp.status_code == 429:
-            print(f"!!! RATE LIMIT (429) {region} - Спим 5 сек !!!")
-            await asyncio.sleep(5)
-            return None 
+            print(f"!!! RATE LIMIT (429) {region} - Спим 10 сек !!!")
+            await asyncio.sleep(10)
+            # Пробуем рекурсивно еще раз
+            return await fetch_steam_batch(client, app_ids, region)
             
-        # Если ошибка 400 и мы запрашивали МНОГО игр — значит один из ID "битый".
+        # --- УМНОЕ РАЗБИЕНИЕ (BINARY SPLIT) ---
         elif resp.status_code == 400 and len(app_ids) > 1:
-            print(f"   ⚠️ Ошибка 400 (пачка не прошла). Разбиваем {len(app_ids)} игр поодиночке...")
-            combined_data = {}
+            print(f"   ⚠️ Ошибка 400. Делим пачку {len(app_ids)} на две части...")
+            mid = len(app_ids) // 2
+            group1 = app_ids[:mid]
+            group2 = app_ids[mid:]
             
-            for single_id in app_ids:
-                await asyncio.sleep(0.2) 
-                one_game_data = await fetch_steam_batch(client, [single_id], region)
-                if one_game_data:
-                    combined_data.update(one_game_data)
+            # Запускаем обе половинки
+            data1 = await fetch_steam_batch(client, group1, region)
+            data2 = await fetch_steam_batch(client, group2, region)
             
-            return combined_data
+            combined = {}
+            if data1: combined.update(data1)
+            if data2: combined.update(data2)
+            return combined
 
         elif resp.status_code == 400 and len(app_ids) == 1:
-            print(f"   ❌ ID {app_ids[0]} недопустим (400). Пропускаем.")
+            # Если даже одна игра выдает 400, значит её не существует
             return {}
 
-        else:
-            print(f"   ⚠️ Странный статус: {resp.status_code}")
-            return {}
-            
     except Exception as e:
-        print(f"❌ Error fetching batch: {repr(e)}")
+        print(f"❌ Ошибка соединения: {repr(e)}")
         return {}
+    return {}
 
 async def resolve_steam_id_from_url(input_str: str) -> Optional[str]:
     """
@@ -247,15 +247,13 @@ async def get_games_batch(payload: BatchRequest):
     return StreamingResponse(generate_games(payload), media_type="application/x-ndjson")
 
 async def generate_games(payload: BatchRequest):
-    """Генератор: игры по одной + ПОСЛЕДОВАТЕЛЬНЫЙ парсинг тегов"""
     requested_ids = payload.steam_ids
     playtimes = payload.playtimes
     
+    # 1. Сначала отдаем то, что УЖЕ есть в базе (Мгновенно)
     ids_to_fetch = []
-    
     cutoff_time = datetime.now() - timedelta(hours=24)
 
-    # 1. Из базы
     with Session(engine) as session:
         existing_games = session.exec(select(Game).where(Game.steam_id.in_(requested_ids))).all()
         existing_map = {g.steam_id: g for g in existing_games}
@@ -263,6 +261,7 @@ async def generate_games(payload: BatchRequest):
         for sid in requested_ids:
             if sid in existing_map:
                 game_obj = existing_map[sid]
+                # Если данные свежие - отдаем сразу
                 if game_obj.last_updated and game_obj.last_updated > cutoff_time:
                     d = game_obj.model_dump()
                     d['playtime_forever'] = playtimes.get(sid, 0)
@@ -276,98 +275,106 @@ async def generate_games(payload: BatchRequest):
     if not ids_to_fetch:
         return
 
-    # 2. Грузим недостающие
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        
-        def save_and_yield(sid, data_dict, region, tags=None):
-            with Session(engine) as session:
-                new_data = process_game_data(sid, data_dict, region, tags)
-                existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
-                if existing:
-                    existing.name = new_data.name
-                    existing.image_url = new_data.image_url
-                    existing.genres = new_data.genres
-                    existing.price_str = new_data.price_str
-                    existing.discount_percent = new_data.discount_percent
-                    existing.last_updated = datetime.now()
-                    session.add(existing)
-                    final_obj = existing
-                else:
-                    session.add(new_data)
-                    final_obj = new_data
-                
-                session.commit()
-                session.refresh(final_obj)
-                
-                d = final_obj.model_dump()
-                d['playtime_forever'] = playtimes.get(sid, 0)
-                d['last_updated'] = final_obj.last_updated.isoformat()
-                return d
+    # 2. Настраиваем параллельность
+    # SEMAPHORE = 3 (Безопасно) или 5 (Быстро, но риск бана выше)
+    # Попробуй начать с 4
+    sem = asyncio.Semaphore(4) 
 
-        # --- ШАГ 1: RU ---
-        missing_after_ru = []
-        await asyncio.sleep(0.5) 
+    async with httpx.AsyncClient(timeout=45.0) as client:
         
-        ru_data = await fetch_steam_batch(client, ids_to_fetch, 'ru')
-        
-        if ru_data:
-            success_ids = []
-            for sid in ids_to_fetch:
-                s_sid = str(sid)
-                if s_sid in ru_data and ru_data[s_sid]['success']:
-                    success_ids.append(sid)
-                else:
-                    missing_after_ru.append(sid)
-
-            # Качаем теги ПО ОЧЕРЕДИ
-            tags_map = {}
-            if success_ids:
-                print(f"🏷️ Качаем метки для {len(success_ids)} игр (по очереди)...")
-                for sid in success_ids:
-                    tags = await fetch_store_tags(client, sid)
-                    tags_map[sid] = tags
-            
-            # Сохраняем
-            for sid in success_ids:
-                s_sid = str(sid)
-                game_json = ru_data[s_sid]
+        # Вспомогательная функция для обработки одной пачки (10-20 игр)
+        async def process_chunk(chunk_ids):
+            async with sem: # Ограничиваем кол-во одновременных потоков
+                # Шаг 1: RU
+                steam_data = await fetch_steam_batch(client, chunk_ids, 'ru')
+                region = 'ru'
                 
-                temp_check = process_game_data(sid, game_json, 'ru')
-                if temp_check.price_str == "Не продается":
-                    missing_after_ru.append(sid)
+                # Если в RU пусто или не продается, пробуем KZ
+                # (Упрощенная логика для скорости: проверяем только RU и KZ)
+                missing_in_ru = []
+                if not steam_data:
+                    missing_in_ru = chunk_ids
                 else:
-                    user_tags = tags_map.get(sid)
-                    result = save_and_yield(sid, game_json, 'ru', user_tags)
-                    yield json.dumps(result) + "\n"
-        else:
-            missing_after_ru = list(ids_to_fetch)
+                    for sid in chunk_ids:
+                        s_sid = str(sid)
+                        if s_sid not in steam_data or not steam_data[s_sid]['success']:
+                            missing_in_ru.append(sid)
+                        else:
+                            # Проверяем "Не продается"
+                            temp = process_game_data(sid, steam_data[s_sid], 'ru')
+                            if temp.price_str == "Не продается":
+                                missing_in_ru.append(sid)
 
-        # --- ШАГ 2: KZ ---
-        missing_after_kz = []
-        if missing_after_ru:
-            await asyncio.sleep(1.0) 
-            kz_data = await fetch_steam_batch(client, missing_after_ru, 'kz')
-            if kz_data:
-                for sid in missing_after_ru:
+                if missing_in_ru:
+                    kz_data = await fetch_steam_batch(client, missing_in_ru, 'kz')
+                    if kz_data:
+                        if not steam_data: steam_data = {}
+                        steam_data.update(kz_data)
+                        region = 'kz' # Смешанный режим, но цену возьмем последнюю
+
+                results = []
+                
+                # Шаг 2: Обработка и ТЕГИ
+                # Чтобы ускорить, мы не будем делать отдельный цикл для тегов.
+                # Мы возьмем ЖАНРЫ из JSON, которые уже скачались.
+                # ЕСЛИ ты очень хочешь парсить HTML-теги, это замедлит всё в разы.
+                # Ниже компромисс: если игр в пачке мало, грузим теги.
+                
+                for sid in chunk_ids:
                     s_sid = str(sid)
-                    if s_sid in kz_data and kz_data[s_sid]['success']:
-                        result = save_and_yield(sid, kz_data[s_sid], 'kz', None)
-                        yield json.dumps(result) + "\n"
-                    else:
-                        missing_after_kz.append(sid)
-            else:
-                missing_after_kz = missing_after_ru
+                    if s_sid in steam_data and steam_data[s_sid]['success']:
+                        game_json = steam_data[s_sid]
+                        
+                        # --- ТЕГИ: Самое узкое место ---
+                        # Чтобы было быстрее, пробуем брать genres из JSON.
+                        # Раскомментируй строку ниже, если готов ждать ради тегов
+                        custom_tags = await fetch_store_tags(client, sid) 
+                        # custom_tags = None # Если хочешь скорость ракеты - оставь None
+                        
+                        with Session(engine) as session:
+                            new_data = process_game_data(sid, game_json, region, custom_tags)
+                            
+                            # Сохранение в БД (Upsert)
+                            existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
+                            if existing:
+                                existing.name = new_data.name
+                                existing.image_url = new_data.image_url
+                                existing.genres = new_data.genres
+                                existing.price_str = new_data.price_str
+                                existing.discount_percent = new_data.discount_percent
+                                existing.last_updated = datetime.now()
+                                session.add(existing)
+                                final_obj = existing
+                            else:
+                                session.add(new_data)
+                                final_obj = new_data
+                            
+                            session.commit()
+                            session.refresh(final_obj)
+                            
+                            d = final_obj.model_dump()
+                            d['playtime_forever'] = playtimes.get(sid, 0)
+                            d['last_updated'] = final_obj.last_updated.isoformat()
+                            results.append(d)
+                return results
 
-        # --- ШАГ 3: US ---
-        if missing_after_kz:
-             await asyncio.sleep(1.0)
-             us_data = await fetch_steam_batch(client, missing_after_kz, 'us')
-             if us_data:
-                for sid in missing_after_kz:
-                    s_sid = str(sid)
-                    if s_sid in us_data and us_data[s_sid]['success']:
-                         result = save_and_yield(sid, us_data[s_sid], 'us', None)
-                         yield json.dumps(result) + "\n"
+        # 3. Разбиваем на пачки по 10 штук (было 10)
+        # Уменьшим пачку до 6, чтобы реже ловить ошибку 400
+        chunk_size = 6
+        chunks = [ids_to_fetch[i:i + chunk_size] for i in range(0, len(ids_to_fetch), chunk_size)]
+        
+        # Создаем задачи
+        tasks = [asyncio.create_task(process_chunk(chunk)) for chunk in chunks]
+        
+        # 4. Выдаем результат по мере готовности (as_completed)
+        # Это значит, что игры будут появляться на экране СРАЗУ, как только скачалась любая пачка
+        for completed_task in asyncio.as_completed(tasks):
+            try:
+                batch_results = await completed_task
+                for game_res in batch_results:
+                    yield json.dumps(game_res) + "\n"
+            except Exception as e:
+                print(f"Ошибка в батче: {e}")
 
 # --- СТАНДАРТНЫЕ МАРШРУТЫ ---
 
