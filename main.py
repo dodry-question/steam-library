@@ -1,33 +1,34 @@
-from typing import List, Dict, Any, Optional
+import os
+import json
+import re
+import random
+import asyncio
+import httpx
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
+from urllib.parse import quote, unquote
+
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Field, Session, SQLModel, create_engine, select
-import httpx
-import asyncio
-import json
-import re
-import os
-import random
-import g4f
-from g4f.client import AsyncClient
 from fastapi.staticfiles import StaticFiles
-from g4f.Provider import PollinationsAI
-from urllib.parse import quote, unquote
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 # --- НАСТРОЙКИ ---
 STEAM_API_KEY = os.environ.get("STEAM_API_KEY") 
-MY_DOMAIN = os.environ.get("MY_DOMAIN")
+MY_DOMAIN = os.environ.get("MY_DOMAIN", "http://localhost:8000")
 
-# Курсы валют (примерные, обновятся при запуске)
+# Глобальная блокировка для запросов к Store API, чтобы разные пользователи не дудосили
+STORE_API_LOCK = asyncio.Lock()
+
+# Курсы валют (обновляются при старте)
 RATE_KZT_TO_RUB = 0.21  
 RATE_USD_TO_RUB = 95.0 
 
 # --- База данных ---
 class Game(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    steam_id: int = Field(index=True)
+    steam_id: int = Field(index=True, unique=True) # Добавил unique для надежности
     name: str
     image_url: str
     genres: str | None = None
@@ -35,377 +36,348 @@ class Game(SQLModel, table=True):
     discount_percent: int = 0
     last_updated: datetime = Field(default_factory=datetime.now)
 
-# Модель для приема списка ID от фронтенда
 class BatchRequest(SQLModel):
     steam_ids: List[int]
-    playtimes: Dict[int, int]  # Словарь: id -> время в минутах
+    playtimes: Dict[int, int]
 
 sqlite_file_name = "games.db"
 engine = create_engine(f"sqlite:///{sqlite_file_name}")
 
-async def update_currency_rates():
-    """Обновляет курсы валют с сайта ЦБ РФ"""
-    global RATE_KZT_TO_RUB, RATE_USD_TO_RUB
-    
-    url = "https://www.cbr-xml-daily.ru/daily_json.js"
-    print("💱 Обновляем курсы валют...")
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            data = resp.json()
-            
-            usd_data = data["Valute"]["USD"]
-            kzt_data = data["Valute"]["KZT"]
-            
-            RATE_USD_TO_RUB = usd_data["Value"] / usd_data["Nominal"]
-            RATE_KZT_TO_RUB = kzt_data["Value"] / kzt_data["Nominal"]
-            
-            print(f"✅ Курсы ЦБ РФ загружены: USD={RATE_USD_TO_RUB:.2f}₽, KZT={RATE_KZT_TO_RUB:.4f}₽")
-            
-    except Exception as e:
-        print(f"⚠️ Ошибка обновления курсов (используем стандартные): {e}")
-
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
+# --- Приложение ---
 app = FastAPI()
+# Создаем папку static, если нет
+if not os.path.exists("static"):
+    os.makedirs("static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 @app.on_event("startup")
 async def on_startup():
     create_db_and_tables()
-    await update_currency_rates()
+    asyncio.create_task(update_currency_rates())
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+async def update_currency_rates():
+    """Фоновое обновление валют"""
+    global RATE_KZT_TO_RUB, RATE_USD_TO_RUB
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("https://www.cbr-xml-daily.ru/daily_json.js")
+            data = resp.json()
+            RATE_USD_TO_RUB = data["Valute"]["USD"]["Value"]
+            kzt = data["Valute"]["KZT"]
+            RATE_KZT_TO_RUB = kzt["Value"] / kzt["Nominal"]
+            print(f"💱 Курсы обновлены: USD={RATE_USD_TO_RUB:.2f}, KZT={RATE_KZT_TO_RUB:.4f}")
+    except:
+        print("⚠️ Не удалось обновить курсы, используем стандартные.")
 
-async def fetch_steam_batch(client: httpx.AsyncClient, app_ids: List[int], region: str):
+# --- Вспомогательные функции API ---
+
+async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int], region: str):
+    """
+    Безопасный запрос к Store API с учетом Rate Limit.
+    Запрашивает пачку ID (до 25-30 штук за раз).
+    """
     if not app_ids:
         return {}
     
-    # Базовый URL
+    # Склеиваем ID через запятую
+    ids_str = ",".join(map(str, app_ids))
     url = "https://store.steampowered.com/api/appdetails"
     params = {
-        "appids": ",".join(map(str, app_ids)),
+        "appids": ids_str,
         "l": "russian",
-        "cc": region
+        "cc": region,
+        "filters": "price_overview,basic,genres" # Запрашиваем только нужное для скорости
     }
-    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
-    
-    try:
-        # Небольшая пауза, чтобы не дудосить, но параллельные запросы перекроют это ожидание
-        await asyncio.sleep(random.uniform(0.5, 1.0))
-        
-        print(f"🌍 [STEAM API] Запрос {len(app_ids)} шт -> {region.upper()}...")
-        resp = await client.get(url, params=params, headers=headers)
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            return data if data else {}
-            
-        elif resp.status_code == 429:
-            print(f"!!! RATE LIMIT (429) {region} - Спим 10 сек !!!")
-            await asyncio.sleep(10)
-            # Пробуем рекурсивно еще раз
-            return await fetch_steam_batch(client, app_ids, region)
-            
-        # --- УМНОЕ РАЗБИЕНИЕ (BINARY SPLIT) ---
-        elif resp.status_code == 400 and len(app_ids) > 1:
-            print(f"   ⚠️ Ошибка 400. Делим пачку {len(app_ids)} на две части...")
-            mid = len(app_ids) // 2
-            group1 = app_ids[:mid]
-            group2 = app_ids[mid:]
-            
-            # Запускаем обе половинки
-            data1 = await fetch_steam_batch(client, group1, region)
-            data2 = await fetch_steam_batch(client, group2, region)
-            
-            combined = {}
-            if data1: combined.update(data1)
-            if data2: combined.update(data2)
-            return combined
 
-        elif resp.status_code == 400 and len(app_ids) == 1:
-            # Если даже одна игра выдает 400, значит её не существует
-            return {}
-
-    except Exception as e:
-        print(f"❌ Ошибка соединения: {repr(e)}")
-        return {}
+    # ВАЖНО: Глобальная блокировка. Никто другой не может сделать запрос, пока этот не пройдет.
+    async with STORE_API_LOCK:
+        try:
+            print(f"🌍 [Store API] Запрос {len(app_ids)} игр ({region})...")
+            resp = await client.get(url, params=params, headers=headers, timeout=20.0)
+            
+            if resp.status_code == 429:
+                print("🛑 429 Rate Limit! Ждем 60 секунд...")
+                await asyncio.sleep(60) 
+                # Рекурсивный повтор после сна
+                return await fetch_steam_store_data(client, app_ids, region)
+            
+            if resp.status_code == 200:
+                # Успех - ОБЯЗАТЕЛЬНАЯ ЗАДЕРЖКА ПОСЛЕ УСПЕХА
+                await asyncio.sleep(1.6) # 1.5 сек минимум + 0.1 буфер
+                return resp.json()
+                
+        except Exception as e:
+            print(f"❌ Ошибка запроса к Steam: {e}")
+            await asyncio.sleep(1) # Пауза при ошибке
+            
     return {}
 
-async def resolve_steam_id_from_url(input_str: str) -> Optional[str]:
-    """
-    Превращает ссылку, vanity url или ID в чистый SteamID64.
-    Примеры входа:
-    - https://steamcommunity.com/id/gabelogannewell
-    - https://steamcommunity.com/profiles/76561197960287930
-    - gabelogannewell
-    - 76561197960287930
-    """
-    input_str = input_str.strip()
-    
-    # 1. Если это уже чистый ID (только цифры, длина 17)
-    if input_str.isdigit() and len(input_str) == 17:
-        return input_str
+def parse_game_obj(steam_id: int, data: dict, region: str) -> Game:
+    """Парсинг JSON от стима в объект базы данных"""
+    success = data.get('success', False)
+    if not success:
+        # Если неудача, возвращаем заглушку, чтобы не долбить API снова
+        return Game(steam_id=steam_id, name=f"App {steam_id}", image_url="", price_str="Недоступно", discount_percent=0)
 
-    # 2. Очищаем от URL части
-    clean_str = input_str
-    if "steamcommunity.com/profiles/" in input_str:
-        clean_str = input_str.split("profiles/")[1].split("/")[0]
-        if clean_str.isdigit(): return clean_str
-    
-    if "steamcommunity.com/id/" in input_str:
-        clean_str = input_str.split("id/")[1].split("/")[0]
-
-    # 3. Пытаемся разрешить Vanity URL через API
-    url = f"http://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean_str}"
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url)
-            data = resp.json()
-            if data['response']['success'] == 1:
-                return data['response']['steamid']
-        except:
-            pass
-            
-    return None
-
-async def fetch_store_tags(client: httpx.AsyncClient, app_id: int) -> str:
-    """Парсим теги аккуратно, с задержкой, чтобы не получить бан"""
-    url = f"https://store.steampowered.com/app/{app_id}/?l=russian"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Cookie": "birthtime=0; lastagecheckage=1-0-1900; wants_mature_content=1"
-    }
-    
-    try:
-        # Случайная пауза, имитация человека
-        await asyncio.sleep(random.uniform(0.1, 0.3))
-        
-        resp = await client.get(url, headers=headers, timeout=5.0)
-        if resp.status_code == 200:
-            text = resp.text
-            tags = re.findall(r'<a[^>]+class="app_tag"[^>]*>\s*([^<]+?)\s*</a>', text)
-            if tags:
-                clean_tags = [t.strip() for t in tags[:5] if t.strip() != '+']
-                return ", ".join(clean_tags)
-    except Exception as e:
-        pass
-    
-    return None
-    
-def process_game_data(steam_id: int, data: dict, region: str, custom_tags: str = None) -> Game:
-    game_data = data['data']
-    name = game_data['name']
+    game_data = data.get('data', {})
+    name = game_data.get('name', f"App {steam_id}")
     image = game_data.get('header_image', '')
     
-    # ЕСЛИ МЫ НАШЛИ НАРОДНЫЕ ТЕГИ - БЕРЕМ ИХ. ЕСЛИ НЕТ - ОФИЦИАЛЬНЫЕ ЖАНРЫ.
-    if custom_tags:
-        genres_str = custom_tags
-    else:
-        genres_list = [g['description'] for g in game_data.get('genres', [])]
-        genres_str = ", ".join(genres_list)
+    genres = []
+    for g in game_data.get('genres', []):
+        genres.append(g['description'])
+    genres_str = ", ".join(genres) if genres else "N/A"
 
-    price_text = "Не продается"
+    price_str = "Не продается"
     discount = 0
 
     if game_data.get('is_free'):
-        price_text = "Бесплатно"
+        price_str = "Бесплатно"
     elif 'price_overview' in game_data:
-        price_obj = game_data['price_overview']
-        discount = price_obj['discount_percent']
+        p = game_data['price_overview']
+        discount = p.get('discount_percent', 0)
+        final = p.get('final', 0)
         
         if region == 'kz':
-            price_val = price_obj['final'] / 100
-            price_rub = int(price_val * RATE_KZT_TO_RUB)
-            price_text = f"~{price_rub} ₽"
+            rub = int((final / 100) * RATE_KZT_TO_RUB)
+            price_str = f"~{rub} ₽"
         elif region == 'us':
-            price_val = price_obj['final'] / 100
-            price_rub = int(price_val * RATE_USD_TO_RUB)
-            price_text = f"~{price_rub} ₽"
+            rub = int((final / 100) * RATE_USD_TO_RUB)
+            price_str = f"~{rub} ₽"
         else:
-            price_text = price_obj['final_formatted']
+            price_str = p.get('final_formatted', f"{final/100}")
 
     return Game(
         steam_id=steam_id,
         name=name,
         image_url=image,
         genres=genres_str,
-        price_str=price_text,
-        discount_percent=discount
+        price_str=price_str,
+        discount_percent=discount,
+        last_updated=datetime.now()
     )
 
-# --- ЛОГИКА API ---
+# --- Основной генератор данных ---
 
 @app.post("/api/games-batch")
 async def get_games_batch(payload: BatchRequest):
-    return StreamingResponse(generate_games(payload), media_type="application/x-ndjson")
+    """Эндпоинт, отдающий данные потоком (NDJSON)"""
+    return StreamingResponse(game_generator(payload), media_type="application/x-ndjson")
 
-async def generate_games(payload: BatchRequest):
-    requested_ids = payload.steam_ids
+async def game_generator(payload: BatchRequest):
+    ids = payload.steam_ids
     playtimes = payload.playtimes
     
+    # 1. Сначала отдаем то, что есть в базе (ОЧЕНЬ БЫСТРО)
     ids_to_fetch = []
-    cutoff_time = datetime.now() - timedelta(hours=24)
+    
+    # Отсечка: если данные старше 3 дней, обновим
+    cutoff = datetime.now() - timedelta(days=3)
 
-    # 1. Проверка базы данных
     with Session(engine) as session:
-        existing_games = session.exec(select(Game).where(Game.steam_id.in_(requested_ids))).all()
+        # Запрашиваем сразу пачкой из БД
+        stmt = select(Game).where(Game.steam_id.in_(ids))
+        existing_games = session.exec(stmt).all()
         existing_map = {g.steam_id: g for g in existing_games}
 
-        for sid in requested_ids:
-            if sid in existing_map:
-                game_obj = existing_map[sid]
-                if game_obj.last_updated and game_obj.last_updated > cutoff_time:
-                    d = game_obj.model_dump()
-                    d['playtime_forever'] = playtimes.get(sid, 0)
-                    d['last_updated'] = game_obj.last_updated.isoformat()
-                    yield json.dumps(d) + "\n"
-                else:
-                    ids_to_fetch.append(sid)
+        for steam_id in ids:
+            game = existing_map.get(steam_id)
+            if game and game.last_updated > cutoff:
+                # Если актуально - отдаем сразу
+                d = game.model_dump()
+                d['playtime_forever'] = playtimes.get(steam_id, 0)
+                yield json.dumps(d, ensure_ascii=False) + "\n"
             else:
-                ids_to_fetch.append(sid)
+                # Если нет или старо - в очередь на скачивание
+                ids_to_fetch.append(steam_id)
 
     if not ids_to_fetch:
         return
 
-    # --- ИЗМЕНЕНИЕ 1: Снижаем нагрузку до 2 потоков ---
-    # Это избавит от вечных "Sleep 10 sec"
-    sem = asyncio.Semaphore(2) 
+    # 2. Скачиваем недостающее пачками по 25 штук
+    # Это оптимальный баланс между скоростью и кол-вом запросов
+    CHUNK_SIZE = 25 
+    chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        
-        async def process_chunk(chunk_ids):
-            async with sem:
-                results = []
-                
-                # --- ШАГ 1: Загружаем RU ---
-                ru_data = await fetch_steam_batch(client, chunk_ids, 'ru')
-                if not ru_data: ru_data = {}
+    async with httpx.AsyncClient() as client:
+        for chunk in chunks:
+            # -- ЛОГИКА ОПРЕДЕЛЕНИЯ ЦЕНЫ --
+            # Сначала пробуем RU регион. Если игра продается - ок.
+            # Если нет ("success": false или нет цены), пробуем KZ.
+            
+            # 1. Запрос RU
+            ru_resp = await fetch_steam_store_data(client, chunk, 'ru')
+            
+            # Списки для сохранения
+            games_to_save = []
+            kz_needed = []
 
-                # Список тех, кого нашли в RU
-                found_in_ru = []
+            for sid in chunk:
+                sid_str = str(sid)
+                data = ru_resp.get(sid_str, {})
                 
-                # Обрабатываем RU сразу, чтобы не перепутать валюты
-                for sid in chunk_ids:
-                    s_sid = str(sid)
-                    if s_sid in ru_data and ru_data[s_sid]['success']:
-                        # Проверяем на "Не продается"
-                        temp_game = process_game_data(sid, ru_data[s_sid], 'ru')
-                        if temp_game.price_str != "Не продается":
-                            found_in_ru.append(sid)
-                            # Сохраняем RU версию
-                            with Session(engine) as session:
-                                existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
-                                if existing:
-                                    existing.name = temp_game.name
-                                    existing.image_url = temp_game.image_url
-                                    existing.genres = temp_game.genres
-                                    existing.price_str = temp_game.price_str
-                                    existing.discount_percent = temp_game.discount_percent
-                                    existing.last_updated = datetime.now()
-                                    session.add(existing)
-                                    final_obj = existing
-                                else:
-                                    session.add(temp_game)
-                                    final_obj = temp_game
-                                session.commit()
-                                session.refresh(final_obj)
-                                d = final_obj.model_dump()
-                                d['playtime_forever'] = playtimes.get(sid, 0)
-                                results.append(d)
+                # Проверяем, удалось ли получить данные
+                if data.get('success'):
+                    # Проверяем цену. Если есть price_overview или is_free - это RU цена
+                    game_obj = parse_game_obj(sid, data, 'ru')
+                    if game_obj.price_str != "Не продается":
+                        games_to_save.append(game_obj)
+                    else:
+                        kz_needed.append(sid)
+                else:
+                    kz_needed.append(sid)
 
-                # --- ШАГ 2: Загружаем KZ (для тех, кого нет в RU) ---
-                missing_ids = [sid for sid in chunk_ids if sid not in found_in_ru]
-                
-                if missing_ids:
-                    kz_data = await fetch_steam_batch(client, missing_ids, 'kz')
-                    if not kz_data: kz_data = {}
+            # 2. Запрос KZ (только для тех, кого не нашли в RU)
+            if kz_needed:
+                # ВАЖНО: Мы уже подождали 1.5 сек внутри fetch_steam_store_data
+                kz_resp = await fetch_steam_store_data(client, kz_needed, 'kz')
+                for sid in kz_needed:
+                    sid_str = str(sid)
+                    data = kz_resp.get(sid_str, {})
+                    # Парсим как KZ
+                    game_obj = parse_game_obj(sid, data, 'kz')
+                    games_to_save.append(game_obj)
+
+            # 3. Сохранение в БД и отправка клиенту
+            if games_to_save:
+                with Session(engine) as session:
+                    for g in games_to_save:
+                        # Upsert (обновление или вставка)
+                        existing = session.exec(select(Game).where(Game.steam_id == g.steam_id)).first()
+                        if existing:
+                            existing.name = g.name
+                            existing.image_url = g.image_url
+                            existing.genres = g.genres
+                            existing.price_str = g.price_str
+                            existing.discount_percent = g.discount_percent
+                            existing.last_updated = datetime.now()
+                            session.add(existing)
+                            d = existing.model_dump()
+                        else:
+                            session.add(g)
+                            d = g.model_dump()
+                        
+                        d['playtime_forever'] = playtimes.get(g.steam_id, 0)
+                        # Отправляем на фронт
+                        yield json.dumps(d, ensure_ascii=False) + "\n"
                     
-                    found_in_kz = []
-                    for sid in missing_ids:
-                        s_sid = str(sid)
-                        if s_sid in kz_data and kz_data[s_sid]['success']:
-                             # Важно: тут передаем 'kz', чтобы применился курс валют
-                            temp_game = process_game_data(sid, kz_data[s_sid], 'kz')
-                            if temp_game.price_str != "Не продается":
-                                found_in_kz.append(sid)
-                                with Session(engine) as session:
-                                    existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
-                                    if existing:
-                                        # Обновляем только поля, id не трогаем
-                                        existing.name = temp_game.name
-                                        existing.image_url = temp_game.image_url
-                                        existing.genres = temp_game.genres
-                                        existing.price_str = temp_game.price_str
-                                        existing.discount_percent = temp_game.discount_percent
-                                        existing.last_updated = datetime.now()
-                                        session.add(existing)
-                                        final_obj = existing
-                                    else:
-                                        session.add(temp_game)
-                                        final_obj = temp_game
-                                    session.commit()
-                                    session.refresh(final_obj)
-                                    d = final_obj.model_dump()
-                                    d['playtime_forever'] = playtimes.get(sid, 0)
-                                    results.append(d)
-                    
-                    # --- ШАГ 3: Загружаем US (последний шанс) ---
-                    missing_ids_final = [sid for sid in missing_ids if sid not in found_in_kz]
-                    if missing_ids_final:
-                         us_data = await fetch_steam_batch(client, missing_ids_final, 'us')
-                         if us_data:
-                            for sid in missing_ids_final:
-                                s_sid = str(sid)
-                                if s_sid in us_data and us_data[s_sid]['success']:
-                                    temp_game = process_game_data(sid, us_data[s_sid], 'us')
-                                    with Session(engine) as session:
-                                        existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
-                                        if existing:
-                                            existing.name = temp_game.name
-                                            existing.image_url = temp_game.image_url
-                                            existing.genres = temp_game.genres
-                                            existing.price_str = temp_game.price_str
-                                            existing.discount_percent = temp_game.discount_percent
-                                            existing.last_updated = datetime.now()
-                                            session.add(existing)
-                                            final_obj = existing
-                                        else:
-                                            session.add(temp_game)
-                                            final_obj = temp_game
-                                        session.commit()
-                                        session.refresh(final_obj)
-                                        d = final_obj.model_dump()
-                                        d['playtime_forever'] = playtimes.get(sid, 0)
-                                        results.append(d)
+                    session.commit()
 
-                return results
+# --- Остальные роуты (Auth, UI) ---
 
-        # Пачки по 6 штук - хороший баланс
-        chunk_size = 6
-        chunks = [ids_to_fetch[i:i + chunk_size] for i in range(0, len(ids_to_fetch), chunk_size)]
+@app.get("/api/get-games-list")
+async def get_games_list(request: Request, user_id: Optional[str] = None):
+    """Получает только СПИСОК ID игр (это быстро и безопасно)"""
+    target_id = None
+    if user_id:
+        target_id = await resolve_steam_id(user_id)
+    if not target_id:
+        target_id = request.cookies.get("user_steam_id")
+    
+    if not target_id:
+        return {"error": "User ID not provided"}
+
+    url = f"http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={target_id}&format=json&include_appinfo=1&include_played_free_games=1"
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            # Получаем имя пользователя
+            user_url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={target_id}"
+            u_resp = await client.get(user_url)
+            u_data = u_resp.json()
+            p_name = target_id
+            if 'response' in u_data and 'players' in u_data['response'] and u_data['response']['players']:
+                p_name = u_data['response']['players'][0]['personaname']
+
+            # Получаем игры
+            resp = await client.get(url)
+            data = resp.json()
+            if "response" in data and "games" in data["response"]:
+                games = [{"appid": g["appid"], "playtime": g.get("playtime_forever", 0)} for g in data["response"]["games"]]
+                return {"target_id": target_id, "target_name": p_name, "games": games}
+            else:
+                return {"error": "Профиль скрыт или игр нет"}
+        except Exception as e:
+            return {"error": str(e)}
+
+async def resolve_steam_id(input_str: str) -> Optional[str]:
+    """Разрешает vanity url в ID"""
+    input_str = input_str.strip()
+    if input_str.isdigit() and len(input_str) == 17:
+        return input_str
+    
+    clean = input_str.split('/')[-1] if '/' not in input_str else input_str.rstrip('/').split('/')[-1]
+    
+    url = f"http://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean}"
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url)
+            d = resp.json()
+            if d['response']['success'] == 1:
+                return d['response']['steamid']
+        except: pass
+    return None
+
+@app.post("/api/add-game")
+async def add_game_manual(steam_id: int = Form(...)):
+    """Ручное добавление одной игры"""
+    payload = BatchRequest(steam_ids=[steam_id], playtimes={steam_id: 0})
+    async for item in game_generator(payload):
+        return json.loads(item)
+    return {"error": "Не удалось загрузить"}
+
+# AI эндпоинт (упрощенный, использует прямой запрос)
+@app.post("/api/recommend")
+async def recommend(request: Request):
+    try:
+        body = await request.json()
+        games = body.get("games", [])
+        # Берем топ 10 игр
+        top = sorted(games, key=lambda x: x.get('playtime', 0), reverse=True)[:10]
+        names = ", ".join([g['name'] for g in top])
         
-        tasks = [asyncio.create_task(process_chunk(chunk)) for chunk in chunks]
+        prompt = f"Based on games: {names}. Recommend 3 similar games available on Steam. Format strictly: ID: <appid> | Name: <name> | Reason: <short reason>"
         
-        for completed_task in asyncio.as_completed(tasks):
-            try:
-                batch_results = await completed_task
-                for game_res in batch_results:
-                    yield json.dumps(game_res) + "\n"
-            except Exception as e:
-                print(f"Ошибка в батче: {e}")
+        async with httpx.AsyncClient() as client:
+            resp = await client.post("https://text.pollinations.ai/", json={
+                "messages": [{"role": "user", "content": prompt}],
+                "model": "openai"
+            }, timeout=30.0)
+            text = resp.text
+            
+            # Парсинг ответа
+            recs = []
+            for line in text.split('\n'):
+                if "ID:" in line:
+                    try:
+                        parts = line.split("|")
+                        if len(parts) >= 3:
+                            app_id = int(re.search(r'\d+', parts[0]).group())
+                            rec_game = {
+                                "steam_id": app_id,
+                                "name": parts[1].split(":")[1].strip(),
+                                "ai_reason": parts[2].split(":")[1].strip(),
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
+                                "genres": "AI Recommended",
+                                "price_str": "?",
+                                "discount_percent": 0
+                            }
+                            recs.append(rec_game)
+                    except: pass
+            return {"content": {"recommendations": recs}}
+    except Exception as e:
+        return {"content": {"error": str(e)}}
 
-# --- СТАНДАРТНЫЕ МАРШРУТЫ ---
-
+# Auth Routes
 @app.get("/login")
 def login():
-    steam_openid_url = "https://steamcommunity.com/openid/login"
     params = {
         "openid.ns": "http://specs.openid.net/auth/2.0",
         "openid.mode": "checkid_setup",
@@ -414,212 +386,30 @@ def login():
         "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
         "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
     }
-    param_string = "&".join([f"{k}={v}" for k, v in params.items()])
-    return RedirectResponse(f"{steam_openid_url}?{param_string}")
+    q = "&".join([f"{k}={v}" for k, v in params.items()])
+    return RedirectResponse(f"https://steamcommunity.com/openid/login?{q}")
 
 @app.get("/auth")
 async def auth(request: Request):
     params = request.query_params
     if "openid.identity" in params:
-        steam_id64 = params["openid.identity"].split("/")[-1]
-        api_url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={steam_id64}"
-        user_name = "Steam User"
-        user_avatar = ""
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(api_url)
-                data = resp.json()
-                player = data['response']['players'][0]
-                user_name = player['personaname']
-                if 'avatarmedium' in player: user_avatar = player['avatarmedium']
-                if 'avatarfull' in player: user_avatar = player['avatarfull']
-            except: pass
-        response = RedirectResponse(url="/")
-        response.set_cookie(key="user_steam_id", value=steam_id64)
-        response.set_cookie(key="user_name", value=quote(user_name))
-        response.set_cookie(key="user_avatar", value=user_avatar)
-        return response
-    return RedirectResponse(url="/")
+        sid = params["openid.identity"].split("/")[-1]
+        resp = RedirectResponse("/")
+        resp.set_cookie("user_steam_id", sid)
+        return resp
+    return RedirectResponse("/")
 
 @app.get("/logout")
 def logout():
-    response = RedirectResponse(url="/")
-    response.delete_cookie("user_steam_id")
-    response.delete_cookie("user_name")
-    response.delete_cookie("user_avatar")
-    return response
-
-@app.get("/api/get-games-list") # Переименовали для универсальности
-@app.get("/api/get-games-list")
-async def get_games_list(request: Request, user_id: Optional[str] = None):
-    target_id = None
-    
-    # 1. Определяем ID
-    if user_id:
-        target_id = await resolve_steam_id_from_url(user_id)
-    if not target_id:
-        target_id = request.cookies.get("user_steam_id")
-    
-    if not target_id: 
-        return {"error": "User not found", "games": []}
-
-    print(f"📥 Загружаем библиотеку для ID: {target_id}")
-
-    # 2. Получаем ИМЯ пользователя (Новый код)
-    target_name = target_id # По умолчанию имя = ID
-    async with httpx.AsyncClient() as client:
-        try:
-            # Запрашиваем инфо о профиле
-            summary_url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={target_id}"
-            user_resp = await client.get(summary_url)
-            user_data = user_resp.json()
-            players = user_data.get('response', {}).get('players', [])
-            if players:
-                target_name = players[0].get('personaname', target_id)
-        except Exception as e:
-            print(f"⚠️ Не удалось получить имя профиля: {e}")
-
-        # 3. Получаем список игр
-        url = f"http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={target_id}&format=json&include_appinfo=1&include_played_free_games=1"
-        try:
-            resp = await client.get(url)
-            data = resp.json()
-            if "response" in data and "games" in data["response"]:
-                games_list = [{"appid": g["appid"], "playtime": g.get("playtime_forever", 0)} for g in data["response"]["games"]]
-                # Возвращаем и ID, и Имя
-                return {
-                    "target_id": target_id, 
-                    "target_name": target_name, 
-                    "games": games_list
-                }
-            else:
-                 return {"error": "Profile private or empty", "games": []}
-        except Exception as e:
-            print(f"Error getting list: {e}")
-            pass
-            
-    return {"games": []}
-
-@app.post("/api/add-game")
-async def add_game_api(steam_id: int = Form(...)):
-    """Ручное добавление (исправлено под генератор)"""
-    payload = BatchRequest(steam_ids=[steam_id], playtimes={steam_id: 0})
-    generator = generate_games(payload)
-    async for game_json_str in generator:
-        return json.loads(game_json_str)
-    return {"error": "Игра не найдена"}
-
-async def get_ai_recommendations(user_games: list):
-    # 1. АНАЛИЗ ВКУСОВ (Твой старый код подготовки данных)
-    played_games = [g for g in user_games if g.get('playtime', 0) > 120]
-    played_games.sort(key=lambda x: x.get('playtime', 0), reverse=True)
-    top_games = played_games[:5]
-    if not top_games:
-        top_games = user_games[:5]
-    
-    games_str = ", ".join([f"{g.get('name')}" for g in top_games])
-
-    # 2. ПРОМПТ (Чуть упростим для надежности)
-    prompt = f"""
-    Я люблю игры: {games_str}.
-    Посоветуй 3 похожие игры.
-    
-    ФОРМАТ ОТВЕТА (СТРОГО):
-    APPID: <ID> | NAME: <Название> | REASON: <Короткая причина>
-    APPID: <ID> | NAME: <Название> | REASON: <Короткая причина>
-    APPID: <ID> | NAME: <Название> | REASON: <Короткая причина>
-    """
-
-    print("🤖 Запрос к Pollinations AI (Direct)...")
-
-    try:
-        # --- ВОТ ЗДЕСЬ ИЗМЕНЕНИЯ: ПРЯМОЙ ЗАПРОС БЕЗ G4F ---
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Pollinations имеет простой API endpoint
-            url = "https://text.pollinations.ai/"
-            
-            # Отправляем POST запрос
-            response = await client.post(
-                url, 
-                json={
-                    "messages": [
-                        {"role": "system", "content": "Ты полезный помощник геймера."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "model": "openai", # Или "mistral", "llama"
-                    "seed": random.randint(1, 1000) # Случайность для разнообразия
-                }
-            )
-            
-            if response.status_code != 200:
-                return {"error": f"Ошибка AI провайдера: {response.status_code}"}
-                
-            ai_text = response.text
-        # ----------------------------------------------------
-
-        # 3. ПАРСИНГ ОТВЕТА (Твой старый код)
-        lines = ai_text.split('\n')
-        ids_to_fetch = []
-        reasons_map = {} 
-        
-        for line in lines:
-            if "APPID:" in line:
-                try:
-                    parts = line.split("|")
-                    raw_id = parts[0].replace("APPID:", "").strip()
-                    app_id = int(re.search(r'\d+', raw_id).group())
-                    reason = parts[2].replace("REASON:", "").strip()
-                    ids_to_fetch.append(app_id)
-                    reasons_map[app_id] = reason
-                except Exception as e:
-                    print(f"Ошибка парсинга: {e}")
-
-        if not ids_to_fetch:
-            # Если формат сломался, вернем сырой текст ошибки для отладки
-            print(f"Сырой ответ AI: {ai_text}")
-            return {"error": "ИИ ответил не по формату. Попробуй еще раз."}
-
-        # 4. ЗАГРУЗКА ДАННЫХ STEAM (Твой старый код)
-        print(f"📥 Качаем данные Steam: {ids_to_fetch}")
-        async with httpx.AsyncClient() as steam_client:
-            steam_data = await fetch_steam_batch(steam_client, ids_to_fetch, 'ru')
-            final_cards = []
-            for app_id in ids_to_fetch:
-                s_id = str(app_id)
-                if steam_data and s_id in steam_data and steam_data[s_id]['success']:
-                    game_obj = process_game_data(app_id, steam_data[s_id], 'ru')
-                    d = game_obj.model_dump()
-                    d['ai_reason'] = reasons_map.get(app_id, "Рекомендация ИИ")
-                    final_cards.append(d)
-            
-            return {"recommendations": final_cards}
-
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        return {"error": f"Ошибка сервера: {e}"}
-    
-@app.post("/api/recommend")
-async def recommend_endpoint(request: Request):
-    try:
-        data = await request.json()
-        games = data.get("games", [])
-        # Вызываем твою функцию
-        recommendation = await get_ai_recommendations(games)
-        return {"content": recommendation}
-    except Exception as e:
-        print(f"Ошибка API: {e}")
-        return {"content": f"Ошибка сервера: {str(e)}"}
+    r = RedirectResponse("/")
+    r.delete_cookie("user_steam_id")
+    return r
 
 @app.get("/")
-def home(request: Request):
-    user_id = request.cookies.get("user_steam_id")
-    user_name = request.cookies.get("user_name")
-    user_avatar = request.cookies.get("user_avatar")
-    if user_name: user_name = unquote(user_name)
-    return templates.TemplateResponse("index.html", {
-        "request": request, "user_id": user_id, "user_name": user_name, "user_avatar": user_avatar
-    })
+def index(request: Request):
+    uid = request.cookies.get("user_steam_id")
+    return templates.TemplateResponse("index.html", {"request": request, "user_id": uid})
 
-@app.get("/test")
-def test_page():
-    return "СЕРВЕР РАБОТАЕТ! ПРОБЛЕМА В ШАБЛОНАХ."
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

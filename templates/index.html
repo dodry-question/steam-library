@@ -1,592 +1,271 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Steam Library</title>
-    <link rel="icon" type="image/png" href="/static/favicon.png?v=7">
+    <meta charset="UTF-8">
+    <title>Steam Library Viewer</title>
+    <link rel="icon" href="https://store.steampowered.com/favicon.ico">
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #1b2838; color: #c7d5e0; padding: 40px; margin: 0; }
+        body { background-color: #1b2838; color: #c7d5e0; font-family: sans-serif; margin: 0; padding: 20px; }
         
-        /* --- ШАПКА --- */
-        .header { 
-            display: flex; justify-content: space-between; align-items: center; 
-            margin-bottom: 25px; background-color: #171a21; padding: 15px 20px;
-            border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5);
-        }
-        h1 { color: #ffffff; text-shadow: 0 0 5px #66c0f4; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+        /* Header */
+        .header { display: flex; justify-content: space-between; align-items: center; background: #171a21; padding: 15px; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 20px; }
+        h1 { margin: 0; color: #66c0f4; text-transform: uppercase; font-size: 22px; }
         
-        .user-profile { display: flex; align-items: center; gap: 12px; height: 40px; }
-        .user-avatar { width: 38px; height: 38px; min-width: 38px; min-height: 38px; border-radius: 3px; border: 1px solid #66c0f4; object-fit: cover; display: block; }
-        .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; }
-        .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; }
-        .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; transition: 0.2s; }
-        .btn-logout:hover { color: #ffffff; text-decoration: underline; }
-        .btn-steam { background-color: #2f363d; color: #e5e5e5; text-decoration: none; padding: 8px 16px; font-weight: bold; display: inline-flex; align-items: center; gap: 10px; border-radius: 2px; border: 1px solid #3e464e; transition: 0.2s; font-size: 14px; }
-        .btn-steam:hover { background-color: #434953; color: white; border-color: #66c0f4; }
-        .steam-icon { width: 18px; height: 18px; background: url('https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg') no-repeat center/contain; }
-
-       /* --- ПАНЕЛЬ УПРАВЛЕНИЯ (ЛИПКАЯ) --- */
-        .controls { 
-            background: #101216; 
-            padding: 15px; 
-            border-radius: 4px; 
-            margin-bottom: 30px; 
-            display: flex; 
-            gap: 10px; 
-            flex-wrap: wrap; 
-            align-items: center;
-            
-            position: sticky;
-            top: 20px; 
-            z-index: 1000;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.8);
-            border: 1px solid #3e464e;
-        }
-        .btn-control { padding: 8px 16px; border-radius: 2px; border: none; font-weight: normal; cursor: pointer; transition: 0.2s; color: white; font-size: 13px; font-family: 'Segoe UI', sans-serif; }
-        .btn-load { background: linear-gradient( to bottom, #a4d007 5%, #536904 95%); color: #fff; text-shadow: 1px 1px 0px rgba(0,0,0,0.3); font-weight: bold; }
-        .btn-load:hover { background: linear-gradient( to bottom, #b6e608 5%, #536904 95%); }
-        .btn-clear { background-color: #2a2d33; color: #aaa; }
-        .btn-clear:hover { background-color: #3d4149; color: white; }
-        .btn-sort { background-color: #2a3f5a; color: #66c0f4; }
-        .btn-sort:hover { background-color: #43628a; color: white; }
+        /* Controls */
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; background: #101216; padding: 10px; border-radius: 4px; position: sticky; top: 10px; z-index: 100; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border: 1px solid #3e464e; }
         
-        /* Форма поиска */
-        .search-form { display: flex; gap: 10px; margin-left: auto; align-items: center; }
-        .input-group { display: flex; }
+        button { cursor: pointer; border: none; padding: 10px 15px; border-radius: 2px; font-weight: bold; color: white; transition: 0.2s; }
+        .btn-load { background: linear-gradient(to bottom, #a4d007 5%, #536904 95%); }
+        .btn-load:hover { background: #b6e608; }
+        .btn-load:disabled { background: #444; cursor: not-allowed; }
+        
+        .btn-sort { background: #2a475e; color: #66c0f4; }
+        .btn-sort:hover { background: #3c5d75; color: white; }
+        
+        .btn-ai { background: linear-gradient(45deg, #6b2cf5, #b829e3); }
 
-        /* Поле ввода друга */
-        .input-friend { padding: 8px; border-radius: 2px 0 0 2px; border: 1px solid #3e464e; background: #222b35; color: white; outline: none; width: 180px; border-right: none; }
-        .btn-friend { padding: 8px 12px; border-radius: 0 2px 2px 0; border: none; background-color: #67c1f5; color: #1b2838; cursor: pointer; font-weight: bold; }
-        .btn-friend:hover { background-color: #419dc9; }
+        input { background: #2a3f5a; border: 1px solid #000; color: white; padding: 8px; border-radius: 2px; width: 200px; }
 
-        /* Поле ID (существующее) */
-        .input-manual { padding: 8px; border-radius: 2px 0 0 2px; border: 1px solid #000; background: #181d23; color: white; outline: none; width: 100px; border-right: none; }
-        .btn-find { padding: 8px 12px; border-radius: 0 2px 2px 0; border: none; background-color: #2f363d; color: white; cursor: pointer; font-weight: 600; border: 1px solid #3e464e; }
-        .btn-find:hover { background-color: #434953; border-color: #66c0f4; }
-
-        #status-bar { margin-bottom: 20px; color: #66c0f4; font-size: 14px; height: 20px; font-weight: bold; padding-left: 5px; display: flex; align-items: center; }
-
-        /* --- UI ДЛЯ ПОДСКАЗКИ (ЗНАК ВОПРОСА) --- */
-        .help-icon {
-            display: inline-flex; justify-content: center; align-items: center;
-            width: 20px; height: 20px;
-            background-color: #3d4450; color: #c7d5e0;
-            border-radius: 50%; font-size: 12px; font-weight: bold;
-            cursor: help; margin-left: 10px; position: relative;
-            border: 1px solid #565e69;
-        }
-        .help-icon:hover { background-color: #66c0f4; color: #171a21; border-color: #66c0f4; }
-        .help-icon .tooltip-text {
-            visibility: hidden; width: 220px;
-            background-color: #16202d; color: #fff;
-            text-align: center; border-radius: 4px;
-            padding: 8px; position: absolute; z-index: 2000;
-            top: 140%; left: 50%; margin-left: -110px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-            border: 1px solid #66c0f4; opacity: 0; transition: opacity 0.3s;
-            font-size: 12px; font-weight: normal; line-height: 1.4; pointer-events: none;
-        }
-        .help-icon .tooltip-text::after {
-            content: ""; position: absolute; top: -10px; left: 50%; margin-left: -5px;
-            border-width: 5px; border-style: solid; 
-            border-color: transparent transparent #66c0f4 transparent;
-        }
-        .help-icon:hover .tooltip-text { visibility: visible; opacity: 1; }
-
-        /* --- ГАЛЕРЕЯ --- */
-        .gallery { display: flex; flex-wrap: wrap; gap: 16px; }
+        /* Grid */
+        .gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; }
+        
+        /* Card */
         .card { 
-            background-color: #16202d; width: 280px; position: relative; 
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.2);
-            display: flex; flex-direction: column;
-            animation: fadeIn 0.4s ease-out;
+            width: 250px; background: #16202d; border: 1px solid #000; position: relative;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5); transition: transform 0.2s;
+            opacity: 0; animation: fadeIn 0.5s forwards; /* Анимация появления */
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-        .card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.5); border-color: #66c0f4; z-index: 10; transition: transform 0.2s; }
-        .card-link { display: block; text-decoration: none; color: inherit; flex-grow: 1; }
-        img { width: 100%; display: block; min-height: 130px; background: #0c0f12; object-fit: cover; }
-        .info { padding: 10px; }
-        h2 { font-size: 15px; margin: 0 0 5px 0; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .genres { font-size: 11px; color: #5c7e10; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .playtime { font-size: 11px; color: #697885; margin-top: 2px; }
-        .price-block { display: flex; justify-content: space-between; align-items: center; background-color: #00000033; padding: 6px 10px; margin-top: auto; }
-        .price { font-size: 13px; color: #acb2b8; }
-        .discount-badge { background-color: #4c6b22; color: #beee11; padding: 1px 4px; border-radius: 1px; font-size: 13px; font-weight: bold; }
+        @keyframes fadeIn { to { opacity: 1; } }
         
-        /* --- СПИННЕР --- */
-        .spinner {
-            display: inline-block; width: 18px; height: 18px;
-            border: 3px solid rgba(102, 192, 244, 0.3); border-radius: 50%;
-            border-top-color: #66c0f4; animation: spin 1s ease-in-out infinite;
-            margin-right: 10px; vertical-align: sub;
+        .card:hover { transform: translateY(-5px); border-color: #66c0f4; z-index: 10; }
+        .card img { width: 100%; height: 117px; object-fit: cover; display: block; background: #000; }
+        .card-body { padding: 8px; font-size: 13px; }
+        .game-title { color: #fff; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; margin-bottom: 4px; }
+        .game-genres { color: #5c7e10; font-size: 11px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .game-time { color: #8f98a0; font-size: 11px; }
+        
+        .price-tag { 
+            position: absolute; top: 0; right: 0; 
+            background: rgba(0,0,0,0.8); color: #fff; 
+            padding: 3px 6px; font-size: 12px; font-weight: bold; 
         }
-        .btn-friend .spinner { border-color: rgba(27, 40, 56, 0.2); border-top-color: #1b2838; }
+        .discount { color: #beee11; }
+        
+        /* Status Bar */
+        #status-bar { color: #8f98a0; margin-bottom: 10px; font-size: 14px; min-height: 20px; }
+        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #66c0f4; border-top-color: transparent; border-radius: 50%; animation: spin 1s infinite; vertical-align: middle; margin-right: 5px; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* --- СТИЛИ ДЛЯ AI РЕКОМЕНДАЦИЙ (НОВОЕ) --- */
-        #ai-section {
-            display: none;
-            background: #121418;
-            border: 1px solid #6b2cf5;
-            border-radius: 4px;
-            padding: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 0 20px rgba(107, 44, 245, 0.15);
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        .ai-header {
-            color: #fff; font-size: 18px; margin-bottom: 15px;
-            display: flex; align-items: center; gap: 10px; font-weight: bold;
-        }
-
-        .ai-cards-row {
-            display: flex; gap: 20px; justify-content: flex-start;
-            flex-wrap: wrap; margin-bottom: 15px;
-        }
-
-        .ai-card {
-            background-color: #1b2838; width: 280px; position: relative;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 1px solid #3e464e;
-            transition: transform 0.2s; display: flex; flex-direction: column;
-        }
-        .ai-card:hover { transform: translateY(-5px); border-color: #a4d007; }
-
-        .ai-reasons-block {
-            margin-top: 15px; display: flex; flex-direction: column; gap: 10px;
-        }
-
-        .ai-reason-item {
-            background: #222b35; padding: 10px 15px;
-            border-left: 3px solid #a4d007; color: #c7d5e0;
-            font-size: 14px; line-height: 1.4;
-        }
-        .ai-reason-title {
-            font-weight: bold; color: #fff; margin-bottom: 3px; display: block;
-        }
+        /* AI Section */
+        #ai-block { display: none; background: #222; padding: 15px; margin-bottom: 20px; border-left: 4px solid #6b2cf5; }
     </style>
 </head>
 <body>
-    
-    <div class="header">
-        <h1>Моя Библиотека</h1>
+
+<div class="header">
+    <h1>Steam Viewer</h1>
+    <div>
         {% if user_id %}
-            <div class="user-profile">
-                <img src="{{ user_avatar }}" class="user-avatar">
-                <div class="user-info-col">
-                    <span class="user-name">{{ user_name }}</span>
-                    <a href="/logout" class="btn-logout">Выйти</a>
-                </div>
-            </div>
+            <span style="color: #66c0f4; margin-right: 10px;">ID: {{ user_id }}</span>
+            <a href="/logout" style="color: #aaa; text-decoration: none;">Выйти</a>
         {% else %}
-            <a href="/login" class="btn-steam"><div class="steam-icon"></div>Sign in through Steam</a>
+            <a href="/login" style="background: #2a475e; padding: 5px 10px; color: white; text-decoration: none;">Войти через Steam</a>
         {% endif %}
     </div>
+</div>
 
-    <div class="controls">
-        {% if user_id %}
-            <button onclick="loadLibrary(null)" class="btn-control btn-load">Мои игры</button>
-        {% endif %}
-        <button onclick="clearList()" class="btn-control btn-clear">Очистить</button>
-        <span style="color: #454d58; margin: 0 10px;">|</span>
-        <button onclick="sortGames('playtime')" class="btn-control btn-sort">По времени</button>
-        <button onclick="sortGames('price_desc')" class="btn-control btn-sort">Дорогие</button>
-        <button onclick="sortGames('price_asc')" class="btn-control btn-sort">Дешевые</button>
-        <button onclick="askAI()" class="btn-control" style="background: linear-gradient(45deg, #6b2cf5, #b829e3); border: none; font-weight: bold;">✨ AI Совет</button>
+<div class="controls">
+    <button onclick="loadLibrary()" class="btn-load" id="btn-main">Загрузить библиотеку</button>
+    <button onclick="clearList()" style="background: #333;">Очистить</button>
+    <span style="border-left: 1px solid #555; margin: 0 5px;"></span>
+    <button onclick="sortGames('playtime')" class="btn-sort">Время</button>
+    <button onclick="sortGames('price')" class="btn-sort">Цена</button>
+    <span style="border-left: 1px solid #555; margin: 0 5px;"></span>
+    <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
+    
+    <input type="text" id="friend-id" placeholder="ID друга / Ссылка">
+    <button onclick="loadLibrary(true)" class="btn-sort">Найти</button>
+</div>
 
-        <div class="search-form">
-            <form onsubmit="loadFriendLibrary(event)" class="input-group">
-                <input type="text" id="friend-input" class="input-friend" placeholder="Ссылка на профиль..." required>
-                <button type="submit" class="btn-friend">Найти</button>
-            </form>
-            <form onsubmit="findGameManual(event)" class="input-group">
-                <input type="number" id="manual-steam-id" class="input-manual" placeholder="AppID" required>
-                <button type="submit" class="btn-find">+</button>
-            </form>
-        </div>
-    </div>
+<div id="status-bar"></div>
+<div id="ai-block"></div>
+<div class="gallery" id="container"></div>
 
-    <!-- БЛОК ДЛЯ ВЫВОДА ОТВЕТА ИИ -->
-    <div id="ai-section">
-        <div class="ai-header">
-            <span>🤖</span>
-            <span>Рекомендации на основе ваших вкусов</span>
-        </div>
-        <!-- Сюда JS вставит карточки -->
-        <div class="ai-cards-row" id="ai-cards-container"></div>
-        <!-- Сюда JS вставит текст -->
-        <div class="ai-reasons-block" id="ai-reasons-container"></div>
-    </div>
+<script>
+    let loadedGames = [];
+    let isProcessing = false;
 
-    <div id="status-bar"></div>
-    <div class="gallery" id="games-container"></div>
+    function clearList() {
+        if(isProcessing) return;
+        document.getElementById('container').innerHTML = '';
+        loadedGames = [];
+        document.getElementById('status-bar').innerText = '';
+        document.getElementById('ai-block').style.display = 'none';
+    }
 
-    <script>
-        const userId = "{{ user_id }}";
-        const container = document.getElementById('games-container');
+    async function loadLibrary(isFriend = false) {
+        if (isProcessing) return;
+        isProcessing = true;
+        
+        const btn = document.getElementById('btn-main');
+        btn.disabled = true;
+        clearList();
+
         const statusBar = document.getElementById('status-bar');
         
-        let loadedGames = [];
-        let userPlaytimeMap = {}; 
-        let isLoading = false;
-
-        // --- ОЧИСТКА ---
-        function clearList() {
-            if (isLoading) return;
-            container.innerHTML = '';
-            loadedGames = []; 
-            statusBar.innerText = "";
-            document.getElementById('ai-section').style.display = 'none';
-        }
-
-        // --- РУЧНОЙ ПОИСК ИГРЫ ---
-        async function findGameManual(event) {
-            event.preventDefault(); 
-            const input = document.getElementById('manual-steam-id');
-            const steamId = input.value;
-            if (!steamId) return;
-
-            const btn = document.querySelector('.btn-find');
-            const originalText = btn.innerText;
-            btn.innerText = "...";
-            btn.disabled = true;
-
-            try {
-                const formData = new FormData();
-                formData.append('steam_id', steamId);
-
-                const response = await fetch('/api/add-game', {
-                    method: 'POST',
-                    body: formData
-                });
-                const gameData = await response.json();
-
-                if (gameData.error) {
-                    alert("Игра с таким ID не найдена в Steam или произошла ошибка.");
-                } else {
-                    const existingIndex = loadedGames.findIndex(g => g.steam_id == gameData.steam_id);
-                    if (existingIndex > -1) loadedGames.splice(existingIndex, 1);
-                    
-                    const existingCard = document.querySelector(`.card[data-steam-id="${gameData.steam_id}"]`);
-                    if (existingCard) existingCard.remove();
-
-                    if (userPlaytimeMap[gameData.steam_id]) {
-                        gameData.playtime_forever = userPlaytimeMap[gameData.steam_id];
-                    }
-
-                    loadedGames.push(gameData);
-                    const card = createCardElement(gameData);
-                    
-                    if (container.firstChild) container.insertBefore(card, container.firstChild);
-                    else container.appendChild(card);
-                    
-                    card.style.animation = "none"; 
-                    setTimeout(() => { card.style.animation = "fadeIn 0.5s ease-out"; }, 10);
-                }
-            } catch (e) {
-                console.error(e);
-                alert("Ошибка соединения с сервером.");
-            } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
-                input.value = ''; 
+        try {
+            // 1. Получаем список ID
+            let url = '/api/get-games-list';
+            if (isFriend) {
+                const inp = document.getElementById('friend-id').value;
+                if(inp) url += `?user_id=${encodeURIComponent(inp)}`;
             }
-        }
 
-       // --- ЗАГРУЗКА ДРУГА ---
-        async function loadFriendLibrary(event) {
-            event.preventDefault();
-            const input = document.getElementById('friend-input');
-            const val = input.value.trim();
-            if(!val) return;
-            await loadLibrary(val);
-        }
-
-        // --- УНИВЕРСАЛЬНАЯ ЗАГРУЗКА ---
-        async function loadLibrary(targetInput = null) {
-            if (isLoading) return;
+            statusBar.innerHTML = '<span class="spinner"></span>Получение списка игр...';
             
-            if (!targetInput && (!userId || userId === "None")) {
-                alert("Сначала войдите через Steam, чтобы грузить 'свои' игры.");
+            const listResp = await fetch(url);
+            const listData = await listResp.json();
+
+            if (listData.error) {
+                statusBar.innerText = "Ошибка: " + listData.error;
+                isProcessing = false;
+                btn.disabled = false;
                 return;
             }
 
-            isLoading = true;
-            let activeBtn = targetInput ? document.querySelector('.btn-friend') : document.querySelector('.btn-load');
-            const originalText = activeBtn ? activeBtn.innerText : "";
-            if (activeBtn) {
-                activeBtn.disabled = true;
-                activeBtn.innerHTML = '<div class="spinner"></div>';
-            }
-
-            try {
-                container.innerHTML = '';
-                loadedGames = []; 
-                userPlaytimeMap = {};
-                statusBar.innerText = targetInput ? 'Разрешаем ID профиля...' : 'Получаем список ваших игр...';
-                document.getElementById('ai-section').style.display = 'none';
-                
-                let url = '/api/get-games-list';
-                if (targetInput) url += `?user_id=${encodeURIComponent(targetInput)}`;
-
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (data.error) {
-                    statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка: ${data.error}. Возможно профиль скрыт.</span>`;
-                    isLoading = false;
-                    if(activeBtn) { activeBtn.disabled = false; activeBtn.innerText = originalText; }
-                    return;
-                }
-
-                if (!data.games || data.games.length === 0) {
-                    statusBar.innerText = "Игры не найдены (0 игр или приватный профиль).";
-                    isLoading = false;
-                    if(activeBtn) { activeBtn.disabled = false; activeBtn.innerText = originalText; }
-                    return;
-                }
-
-                data.games.forEach(g => { userPlaytimeMap[g.appid] = g.playtime; });
-
-                const totalFound = data.games.length;
-                statusBar.innerText = `Найдено записей: ${totalFound}. Начинаем загрузку метаданных...`;
-
-                const chunks = chunkArray(data.games, 10); 
-
-                for (let i = 0; i < chunks.length; i++) {
-                    const chunk = chunks[i];
-                    const payload = {
-                        steam_ids: chunk.map(g => g.appid),
-                        playtimes: {}
-                    };
-                    chunk.forEach(g => payload.playtimes[g.appid] = g.playtime);
-
-                    try {
-                        const batchResp = await fetch('/api/games-batch', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify(payload)
-                        });
-
-                        const reader = batchResp.body.getReader();
-                        const decoder = new TextDecoder("utf-8");
-                        let buffer = "";
-
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            buffer += decoder.decode(value, { stream: true });
-                            const lines = buffer.split("\n");
-                            buffer = lines.pop(); 
-
-                            for (const line of lines) {
-                                if (line.trim()) {
-                                    try {
-                                        const game = JSON.parse(line);
-                                        loadedGames.push(game);
-                                        const card = createCardElement(game);
-                                        container.appendChild(card);
-                                        statusBar.innerHTML = `Загружено: <span style="color: white; margin: 0 5px;">${loadedGames.length}</span> из <span style="margin-left: 5px;">${totalFound}</span>`;
-                                    } catch (e) { console.error(e); }
-                                }
-                            }
-                        }
-                    } catch (e) { console.error(e); }
-                }
-                
-                const hiddenCount = totalFound - loadedGames.length;
-                let nameToShow = data.target_name || data.target_id;
-                const safeName = nameToShow.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                let ownerText = targetInput ? ` для друга (<strong style="color: #66c0f4;">${safeName}</strong>)` : "";
-                
-                let statusHtml = `✅ Библиотека${ownerText} загружена! Показано: <span style="color: #fff;">${loadedGames.length}</span>`;
-                if (hiddenCount > 0) {
-                    statusHtml += ` <div class="help-icon">?<span class="tooltip-text">Скрыто ${hiddenCount} (мусор/без цены).</span></div>`;
-                }
-                statusBar.innerHTML = statusHtml;
-
-            } catch (e) {
-                console.error(e);
-                statusBar.innerText = "Критическая ошибка JS.";
-            } finally {
-                isLoading = false;
-                if (activeBtn) {
-                    activeBtn.disabled = false;
-                    activeBtn.innerText = originalText;
-                }
-            }
-        }
-
-        // --- ИНТЕГРАЦИЯ AI СОВЕТОВ (КАРТОЧКИ) ---
-        async function askAI() {
-            if (loadedGames.length === 0) {
-                alert("Сначала загрузите библиотеку!");
+            const gamesList = listData.games;
+            if (!gamesList || gamesList.length === 0) {
+                statusBar.innerText = "Игр нет или профиль скрыт.";
+                isProcessing = false;
+                btn.disabled = false;
                 return;
             }
 
-            const aiSection = document.getElementById('ai-section');
-            const cardsContainer = document.getElementById('ai-cards-container');
-            const reasonsContainer = document.getElementById('ai-reasons-container');
-            const btn = document.querySelector('.btn-control[onclick="askAI()"]');
-            
-            // Сброс интерфейса
-            aiSection.style.display = 'block';
-            cardsContainer.innerHTML = '';
-            reasonsContainer.innerHTML = '<div style="color:#aaa; padding:10px;">🤖 ИИ анализирует ваши топ игры и ищет похожие... (Ждем ~10 сек)</div>';
-            
-            btn.disabled = true;
+            statusBar.innerText = `Найдено ${gamesList.length} игр. Начинаем загрузку метаданных...`;
 
-            try {
-                const response = await fetch('/api/recommend', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ 
-                        games: loadedGames.map(g => ({
-                            name: g.name,
-                            playtime: g.playtime_forever
-                        })) 
-                    })
-                });
-                
-                const data = await response.json();
-                
-                reasonsContainer.innerHTML = ''; // Очистка текста загрузки
+            // 2. Отправляем батч запрос
+            // Мы посылаем ВСЕ ID, бэкенд сам разберется с очередью
+            const steamIds = gamesList.map(g => g.appid);
+            const playtimes = {};
+            gamesList.forEach(g => playtimes[g.appid] = g.playtime);
 
-                if (data.content && data.content.error) {
-                    reasonsContainer.innerHTML = `<div style="color:red">${data.content.error}</div>`;
-                    return;
-                }
-
-                // Обработка текстовой ошибки (если вернулась строка вместо JSON)
-                if (typeof data.content === 'string') {
-                     reasonsContainer.innerHTML = `<div style="padding:10px;">${data.content}</div>`;
-                     return;
-                }
-
-                const recommendations = data.content.recommendations;
-                
-                if (!recommendations || recommendations.length === 0) {
-                    reasonsContainer.innerHTML = "<div style='padding:10px;'>ИИ не смог найти игры или произошла ошибка парсинга.</div>";
-                    return;
-                }
-
-                recommendations.forEach(game => {
-                    // 1. Создаем карточку
-                    const card = document.createElement('div');
-                    card.className = 'ai-card';
-                    
-                    let discountHtml = game.discount_percent > 0 ? `<div class="discount-badge">-${game.discount_percent}%</div>` : '<div></div>';
-                    const imgUrl = game.image_url ? game.image_url : 'https://via.placeholder.com/280x130?text=No+Image';
-
-                    card.innerHTML = `
-                        <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" class="card-link">
-                            <img src="${imgUrl}" alt="${game.name}">
-                            <div class="info">
-                                <h2>${game.name}</h2>
-                                <div class="genres">${game.genres || 'Рекомендация'}</div>
-                            </div>
-                        </a>
-                        <div class="price-block">
-                            ${discountHtml}
-                            <div class="price">${game.price_str || ''}</div>
-                        </div>
-                    `;
-                    cardsContainer.appendChild(card);
-
-                    // 2. Создаем текст причины
-                    const reasonItem = document.createElement('div');
-                    reasonItem.className = 'ai-reason-item';
-                    reasonItem.innerHTML = `
-                        <span class="ai-reason-title">Почему ${game.name}?</span>
-                        ${game.ai_reason}
-                    `;
-                    reasonsContainer.appendChild(reasonItem);
-                });
-                
-            } catch (e) {
-                console.error(e);
-                reasonsContainer.innerHTML = '<div style="color:red; padding:10px;">Ошибка соединения.</div>';
-            } finally {
-                btn.disabled = false;
-            }
-        }
-
-        // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-        function chunkArray(array, size) {
-            const result = [];
-            for (let i = 0; i < array.length; i += size) {
-                result.push(array.slice(i, i + size));
-            }
-            return result;
-        }
-
-        function createCardElement(info) {
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.dataset.steamId = info.steam_id;
-            
-            let hours = Math.round(info.playtime_forever / 60);
-            let timeText = hours > 0 ? `${hours} ч. в игре` : "Не запускалась";
-            let discountHtml = info.discount_percent > 0 ? `<div class="discount-badge">-${info.discount_percent}%</div>` : '<div></div>';
-            const imgUrl = info.image_url ? info.image_url : 'https://via.placeholder.com/280x130?text=No+Image';
-
-            card.innerHTML = `
-                <a href="https://store.steampowered.com/app/${info.steam_id}" target="_blank" class="card-link">
-                    <img src="${imgUrl}" alt="${info.name}" onerror="this.onerror=null;this.src='https://via.placeholder.com/280x130?text=Error';">
-                    <div class="info">
-                        <h2>${info.name}</h2>
-                        <div class="genres">${info.genres || ''}</div>
-                        <div class="playtime">${timeText}</div>
-                    </div>
-                </a>
-                <div class="price-block">
-                    ${discountHtml}
-                    <div class="price">${info.price_str || ''}</div>
-                </div>
-            `;
-            return card;
-        }
-
-        function renderOneCard(info) {
-            const card = createCardElement(info);
-            container.appendChild(card);
-        }
-
-        function sortGames(type) {
-            if (isLoading) return; 
-            if (loadedGames.length === 0) return;
-            
-            loadedGames.sort((a, b) => {
-                const badStatus = "Не продается";
-                const isBadA = a.price_str === badStatus;
-                const isBadB = b.price_str === badStatus;
-
-                if (isBadA && !isBadB) return 1;
-                if (!isBadA && isBadB) return -1;
-
-                if (type === 'playtime') return b.playtime_forever - a.playtime_forever;
-                if (type === 'price_desc' || type === 'price_asc') {
-                    const pA = parsePrice(a.price_str);
-                    const pB = parsePrice(b.price_str);
-                    return type === 'price_desc' ? pB - pA : pA - pB;
-                }
-                return 0;
+            const batchResp = await fetch('/api/games-batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ steam_ids: steamIds, playtimes: playtimes })
             });
-            
-            container.innerHTML = '';
-            loadedGames.forEach(renderOneCard);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
 
-        function parsePrice(priceStr) {
-            if (!priceStr || priceStr === "Бесплатно") return 0;
-            if (priceStr === "Не продается" || priceStr === "Недоступно в РФ") return -1;
-            
-            if (priceStr.includes("$")) {
-                let val = parseFloat(priceStr.replace(/[^0-9,.]/g, '').replace(',', '.'));
-                return val * 95; 
+            // 3. Читаем поток (NDJSON)
+            const reader = batchResp.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+            let count = 0;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop(); // Сохраняем неполную строку
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const game = JSON.parse(line);
+                        loadedGames.push(game);
+                        addCard(game);
+                        count++;
+                        statusBar.innerText = `Загружено: ${count} / ${gamesList.length}`;
+                    } catch (e) {
+                        console.error("JSON Error", e);
+                    }
+                }
             }
-            return parseFloat(priceStr.replace(/[^0-9,.]/g, '').replace(',', '.'));
+            statusBar.innerText = `Готово! Загружено ${count} игр.`;
+
+        } catch (e) {
+            console.error(e);
+            statusBar.innerText = "Ошибка сети.";
+        } finally {
+            isProcessing = false;
+            btn.disabled = false;
         }
-    </script>
+    }
+
+    function addCard(game) {
+        const div = document.createElement('div');
+        div.className = 'card';
+        
+        let hours = Math.round(game.playtime_forever / 60);
+        let timeStr = hours > 0 ? `${hours} ч.` : "";
+        let price = game.price_str || "";
+        let discountClass = game.discount_percent > 0 ? "discount" : "";
+
+        div.innerHTML = `
+            <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" style="text-decoration:none;">
+                <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/250x117?text=No+Image'">
+                <div class="price-tag ${discountClass}">
+                    ${game.discount_percent > 0 ? `-${game.discount_percent}% ` : ''} ${price}
+                </div>
+                <div class="card-body">
+                    <span class="game-title" title="${game.name}">${game.name}</span>
+                    <div class="game-genres">${game.genres || ""}</div>
+                    <div class="game-time">${timeStr}</div>
+                </div>
+            </a>
+        `;
+        document.getElementById('container').appendChild(div);
+    }
+
+    function sortGames(type) {
+        const container = document.getElementById('container');
+        container.innerHTML = '';
+        
+        loadedGames.sort((a, b) => {
+            if (type === 'playtime') return b.playtime_forever - a.playtime_forever;
+            if (type === 'price') {
+                const getP = (s) => s && s.includes('₽') ? parseInt(s.replace(/\D/g,'')) : 0;
+                return getP(b.price_str) - getP(a.price_str);
+            }
+        });
+        
+        loadedGames.forEach(addCard);
+    }
+
+    async function getAI() {
+        const block = document.getElementById('ai-block');
+        block.style.display = 'block';
+        block.innerHTML = '🤖 Думаю...';
+        
+        try {
+            const resp = await fetch('/api/recommend', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ games: loadedGames })
+            });
+            const data = await resp.json();
+            const recs = data.content.recommendations;
+            if(recs && recs.length > 0) {
+                let html = '<h3>✨ AI Рекомендует:</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">';
+                recs.forEach(r => {
+                    html += `
+                    <div style="background:#333; padding:10px; width:200px; border-radius:4px;">
+                        <img src="${r.image_url}" style="width:100%">
+                        <b>${r.name}</b>
+                        <p style="font-size:12px; color:#aaa;">${r.ai_reason}</p>
+                    </div>`;
+                });
+                html += '</div>';
+                block.innerHTML = html;
+            } else {
+                block.innerHTML = 'AI не смог ничего придумать :(';
+            }
+        } catch(e) {
+            block.innerHTML = 'Ошибка AI';
+        }
+    }
+</script>
+
 </body>
 </html>
