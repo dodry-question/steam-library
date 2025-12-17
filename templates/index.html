@@ -11,9 +11,9 @@
         h1 { color: #ffffff; text-shadow: 0 0 5px #66c0f4; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
         
         /* Профиль */
-        .user-profile { display: flex; align-items: center; gap: 12px; height: 40px; justify-content: flex-end; }
-        /* Стили аватарки перенес в HTML inline для надежности */
-        .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; text-align: right; }
+        .user-profile { display: flex; align-items: center; justify-content: flex-end; }
+        
+        .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; text-align: right; margin-right: 12px; }
         .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; white-space: nowrap; }
         .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; }
         .btn-logout:hover { color: #ffffff; text-decoration: underline; }
@@ -66,8 +66,15 @@
                     <span class="user-name">{{ user_name }}</span>
                     <a href="/logout" class="btn-logout">Выйти</a>
                 </div>
-                <!-- ЖЕСТКИЙ ФИКС АВАТАРКИ -->
-                <img src="{{ user_avatar }}" style="width: 40px; height: 40px; min-width: 40px; flex-shrink: 0; border-radius: 3px; border: 1px solid #66c0f4; object-fit: cover; margin-left: 10px;" onerror="this.style.display='none'">
+                <!-- 
+                     РЕШЕНИЕ ПРОБЛЕМЫ АВАТАРКИ:
+                     Обертка div с жесткими размерами (40x40).
+                     Внутри картинка с width/height 100% и object-fit: cover.
+                     Это гарантирует, что картинка всегда будет квадратной.
+                -->
+                <div style="width: 40px; height: 40px; min-width: 40px; min-height: 40px; flex-shrink: 0; border: 1px solid #66c0f4; border-radius: 3px; overflow: hidden;">
+                    <img src="{{ user_avatar }}" style="width: 100%; height: 100%; object-fit: cover; min-height: 0;" onerror="this.style.display='none'">
+                </div>
             </div>
         {% else %}
             <a href="/login" class="btn-steam"><div class="steam-icon"></div>Sign in through Steam</a>
@@ -133,13 +140,8 @@
 
                 statusBar.innerHTML = '<span class="spinner"></span>Получение списка игр...';
                 
-                console.log("Fetching:", url); // Лог для отладки
                 const listResp = await fetch(url);
-                
-                if (!listResp.ok) {
-                    throw new Error(`HTTP Error: ${listResp.status} ${listResp.statusText}`);
-                }
-
+                if (!listResp.ok) throw new Error(`HTTP ${listResp.status}`);
                 const listData = await listResp.json();
 
                 if (listData.error) {
@@ -197,8 +199,8 @@
 
             } catch (e) {
                 console.error(e);
-                alert("Ошибка: " + e.message); // Показываем точную ошибку
-                statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка соединения: ${e.message}</span>`;
+                alert("Ошибка: " + e.message);
+                statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка соединения</span>`;
             } finally {
                 isProcessing = false;
                 if(btn) btn.disabled = false;
@@ -233,7 +235,6 @@
         function sortGames(type) {
             const container = document.getElementById('container');
             if (loadedGames.length === 0) return;
-            
             container.innerHTML = '';
             loadedGames.sort((a, b) => {
                 if (type === 'playtime') return b.playtime_forever - a.playtime_forever;
@@ -253,8 +254,7 @@
             if (loadedGames.length === 0) { alert("Сначала загрузите игры!"); return; }
             const block = document.getElementById('ai-block');
             block.style.display = 'block';
-            block.innerHTML = '<span class="spinner"></span> ИИ анализирует ваши вкусы...';
-            
+            block.innerHTML = '<span class="spinner"></span> ИИ анализирует...';
             try {
                 const resp = await fetch('/api/recommend', {
                     method: 'POST',
@@ -263,7 +263,6 @@
                 });
                 const data = await resp.json();
                 const recs = data.content.recommendations;
-                
                 if(recs && recs.length > 0) {
                     let html = '<h3 style="color:#fff; margin-top:0;">🤖 Рекомендации:</h3><div style="display:flex; gap:15px; flex-wrap:wrap;">';
                     recs.forEach(r => {
