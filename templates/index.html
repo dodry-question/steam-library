@@ -34,7 +34,14 @@
         .btn-friend { border-radius: 0 2px 2px 0; background-color: #67c1f5; color: #1b2838; font-weight: bold; }
 
         .gallery { display: flex; flex-wrap: wrap; gap: 16px; }
-        .card { background-color: #16202d; width: 280px; position: relative; box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.2); animation: fadeIn 0.4s ease-out; display: flex; flex-direction: column; }
+        
+        /* КАРТОЧКА ИГРЫ (ЕДИНАЯ ДЛЯ ВСЕХ) */
+        .card { 
+            background-color: #16202d; width: 280px; position: relative; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.2); 
+            animation: fadeIn 0.4s ease-out; display: flex; flex-direction: column; 
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+        }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         .card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.5); border-color: #66c0f4; z-index: 10; }
         
@@ -242,7 +249,6 @@
                     const getP = (s) => {
                         if (!s || s === "Бесплатно") return 0;
                         if (s.includes("Недоступно") || s.includes("Не продается")) return -1;
-                        // Удаляем всё кроме цифр и запятой
                         return parseFloat(s.replace(/[^0-9,.]/g, '').replace(',', '.'));
                     };
                     return getP(b.price_str) - getP(a.price_str);
@@ -255,7 +261,8 @@
             if (loadedGames.length === 0) { alert("Сначала загрузите игры!"); return; }
             const block = document.getElementById('ai-block');
             block.style.display = 'block';
-            block.innerHTML = '<span class="spinner"></span> ИИ анализирует (до 45 сек)... Смотрите в консоль если не работает.';
+            block.innerHTML = '<span class="spinner"></span> ИИ анализирует...';
+            
             try {
                 const resp = await fetch('/api/recommend', {
                     method: 'POST',
@@ -264,20 +271,34 @@
                 });
                 const data = await resp.json();
                 const recs = data.content.recommendations;
+                
                 if(recs && recs.length > 0) {
-                    let html = '<h3 style="color:#fff; margin-top:0;">🤖 Рекомендации:</h3><div style="display:flex; gap:15px; flex-wrap:wrap;">';
+                    // Генерируем карточки ТОЧНО ТАК ЖЕ, как в addCard
+                    let html = '<h3 style="color:#fff; margin-top:0;">🤖 Рекомендации:</h3><div class="gallery" style="margin-top:10px;">';
+                    
                     recs.forEach(r => {
+                        // Используем те же классы "card", "info", "price-block"
                         html += `
-                        <div style="background:#222; padding:10px; width:220px; border-radius:4px; border:1px solid #444;">
-                            <img src="${r.image_url}" style="width:100%; margin-bottom:5px;">
-                            <div style="color:#fff; font-weight:bold; margin-bottom:5px;">${r.name}</div>
-                            <div style="font-size:12px; color:#aaa; line-height:1.4;">${r.ai_reason}</div>
+                        <div class="card" style="animation:none;">
+                             <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
+                                <img src="${r.image_url}" loading="lazy">
+                                <div class="info">
+                                    <h2>${r.name}</h2>
+                                    <div class="genres">✨ Совет от ИИ</div>
+                                    <div class="playtime" style="color: #beee11; margin-top:5px; line-height:1.2;">${r.ai_reason}</div>
+                                </div>
+                            </a>
+                            <div class="price-block">
+                                <div></div>
+                                <div class="price">Открыть в Steam</div>
+                            </div>
                         </div>`;
                     });
+                    
                     html += '</div>';
                     block.innerHTML = html;
                 } else {
-                    block.innerHTML = 'ИИ не дал рекомендаций (проверьте консоль сервера).';
+                    block.innerHTML = 'ИИ не дал рекомендаций.';
                 }
             } catch(e) {
                 block.innerHTML = 'Ошибка соединения с AI.';

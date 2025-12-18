@@ -18,8 +18,6 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 # --- НАСТРОЙКИ ---
 STEAM_API_KEY = os.environ.get("STEAM_API_KEY") 
 MY_DOMAIN = os.environ.get("MY_DOMAIN", "http://localhost:8000")
-
-# Глобальная блокировка
 STORE_API_LOCK = asyncio.Lock()
 
 # --- База данных ---
@@ -38,7 +36,6 @@ class BatchRequest(SQLModel):
     playtimes: Dict[int, int]
     game_names: Dict[int, str] 
 
-# Настройки БД
 sqlite_file_name = "games.db"
 connect_args = {"check_same_thread": False}
 engine = create_engine(f"sqlite:///{sqlite_file_name}", connect_args=connect_args)
@@ -51,7 +48,6 @@ def create_db_and_tables():
 
 app = FastAPI()
 
-# Middleware для работы через прокси
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -72,16 +68,16 @@ async def on_startup():
 # --- Вспомогательные функции ---
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
-    """Запрашиваем ТОЛЬКО RU регион"""
+    """Запрашиваем RU регион, БЕЗ ФИЛЬТРОВ (чтобы точно получить is_free)"""
     if not app_ids: return {}
     
     ids_str = ",".join(map(str, app_ids))
     url = "https://store.steampowered.com/api/appdetails"
     params = {
         "appids": ids_str,
-        "cc": "ru", # Строго Россия
-        "l": "russian",
-        "filters": "price_overview,basic,genres"
+        "cc": "ru",       # Регион РФ
+        "l": "russian",   # Язык
+        # "filters": ...  <-- УБРАЛИ ФИЛЬТРЫ, чтобы не терять данные
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -89,9 +85,8 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
 
     async with STORE_API_LOCK:
         try:
-            # Небольшая пауза для безопасности
-            await asyncio.sleep(1.2)
-            resp = await client.get(url, params=params, headers=headers, timeout=20.0)
+            await asyncio.sleep(1.5) # Пауза
+            resp = await client.get(url, params=params, headers=headers, timeout=25.0)
             
             if resp.status_code == 429:
                 print("🛑 429 Rate Limit! Спим 60 сек...")
@@ -107,22 +102,18 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
     return {}
 
 def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
-    """
-    Парсит ответ для РФ.
-    """
-    # Стандартная картинка
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
     
     success = data.get('success', False)
     game_data = data.get('data', {})
 
-    # Если данных нет (например, игра недоступна в регионе)
+    # Если API вернул ошибку
     if not success:
         return Game(
             steam_id=steam_id,
             name=known_name,
             image_url=image_url,
-            price_str="Недоступно в РФ", # Сразу пишем, что нет
+            price_str="Недоступно в РФ", 
             genres="Игра",
             discount_percent=0,
             last_updated=datetime.now()
@@ -132,19 +123,26 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     genres = [g['description'] for g in game_data.get('genres', [])]
     genres_str = ", ".join(genres) if genres else ""
 
-    # Логика цены (УПРОЩЕННАЯ)
     price_str = "Недоступно в РФ"
     discount = 0
 
-    if game_data.get('is_free'):
+    # ЛОГИКА ЦЕН
+    is_free = game_data.get('is_free', False)
+    
+    if is_free:
         price_str = "Бесплатно"
     elif 'price_overview' in game_data:
-        # Steam сам отдает строку вида "1 500 руб."
+        # Если есть цена в рублях
         p = game_data['price_overview']
         discount = p.get('discount_percent', 0)
-        price_str = p.get('final_formatted', "Недоступно")
+        price_str = p.get('final_formatted', "")
+        if not price_str: # На всякий случай
+             price_str = f"{int(p.get('final', 0) / 100)} руб."
+    elif 'package_groups' in game_data and len(game_data['package_groups']) > 0:
+        # Иногда цены спрятаны в подписках, но для простоты:
+        price_str = "См. в магазине" 
     else:
-        # success=True, но нет цены и не бесплатно = скорее всего снята с продаж
+        # Если не бесплатно и нет цены -> недоступно
         price_str = "Недоступно в РФ"
 
     return Game(
@@ -170,9 +168,9 @@ async def game_generator(payload: BatchRequest):
         names_map = payload.game_names 
         
         ids_to_fetch = []
-        cutoff = datetime.now() - timedelta(hours=24) 
+        # Обновляем кеш раз в 12 часов, чтобы цены были свежими
+        cutoff = datetime.now() - timedelta(hours=12) 
 
-        # 1. Читаем из БД
         with Session(engine) as session:
             try:
                 existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
@@ -264,14 +262,11 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
                 u_data = u_resp.json()
                 if 'response' in u_data and 'players' in u_data['response'] and u_data['response']['players']:
                     p_name = u_data['response']['players'][0]['personaname']
-            except:
-                pass 
+            except: pass 
 
             resp = await client.get(url, timeout=20.0)
-            if resp.status_code == 403:
-                return {"error": "Steam API Key Error (403)"}
-            if resp.status_code != 200:
-                return {"error": f"Steam API Error: {resp.status_code}"}
+            if resp.status_code == 403: return {"error": "Steam API Key Error (403)"}
+            if resp.status_code != 200: return {"error": f"Steam API Error: {resp.status_code}"}
 
             data = resp.json()
             if "response" in data and "games" in data["response"]:
@@ -290,17 +285,14 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
 
 async def resolve_steam_id(input_str: str) -> Optional[str]:
     input_str = input_str.strip()
-    if input_str.isdigit() and len(input_str) == 17:
-        return input_str
-    
+    if input_str.isdigit() and len(input_str) == 17: return input_str
     clean = input_str.split('/')[-1] if '/' not in input_str else input_str.rstrip('/').split('/')[-1]
     url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean}"
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get(url)
             d = resp.json()
-            if d['response']['success'] == 1:
-                return d['response']['steamid']
+            if d['response']['success'] == 1: return d['response']['steamid']
         except: pass
     return None
 
@@ -311,7 +303,7 @@ async def add_game_manual(steam_id: int = Form(...)):
         return json.loads(item)
     return {"error": "Не удалось загрузить"}
 
-# --- ИИ РЕКОМЕНДАЦИИ ---
+# --- ИИ ---
 @app.post("/api/recommend")
 async def recommend(request: Request):
     try:
@@ -320,13 +312,10 @@ async def recommend(request: Request):
         top = sorted(games, key=lambda x: x.get('playtime', 0), reverse=True)[:10]
         names = ", ".join([g['name'] for g in top])
         
-        # Упрощенный промпт для надежности
-        prompt = f"Games I like: {names}. Suggest 3 similar Steam games. Format: ID: <appid> | Name: <name> | Reason: <short reason>"
-        
-        print(f"🤖 AI Request: {prompt[:50]}...") # Лог запроса
+        prompt = f"I like: {names}. Suggest 3 similar Steam games. Format: ID: <appid> | Name: <name> | Reason: <short reason in Russian>"
+        print(f"🤖 AI Request: {prompt[:50]}...")
 
         async with httpx.AsyncClient() as client:
-            # Используем openai модель (она обычно умнее)
             resp = await client.post("https://text.pollinations.ai/", json={
                 "messages": [{"role": "user", "content": prompt}],
                 "model": "openai",
@@ -334,38 +323,29 @@ async def recommend(request: Request):
             }, timeout=45.0)
             
             text = resp.text
-            print(f"🤖 AI Response: {text}") # ВАЖНО: Смотрим в консоль, что ответил ИИ
+            print(f"🤖 AI Response: {text}")
 
             recs = []
             for line in text.split('\n'):
-                # Ищем строку с ID
                 if "ID:" in line:
                     try:
-                        # Пытаемся распарсить разделитель |
                         parts = line.split("|")
                         if len(parts) >= 3:
-                            # Извлекаем только цифры для ID
-                            app_id_match = re.search(r'\d+', parts[0])
-                            if app_id_match:
-                                app_id = int(app_id_match.group())
-                                recs.append({
-                                    "steam_id": app_id,
-                                    "name": parts[1].split(":")[1].strip(),
-                                    "ai_reason": parts[2].split(":")[1].strip(),
-                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
-                                    "genres": "AI Recommended",
-                                    "price_str": "?",
-                                    "discount_percent": 0
-                                })
-                    except Exception as e:
-                        print(f"⚠️ Ошибка парсинга строки AI: {line} -> {e}")
-
+                            app_id = int(re.search(r'\d+', parts[0]).group())
+                            recs.append({
+                                "steam_id": app_id,
+                                "name": parts[1].split(":")[1].strip(),
+                                "ai_reason": parts[2].split(":")[1].strip(),
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
+                                "genres": "AI Recommended",
+                                "price_str": "?",
+                                "discount_percent": 0
+                            })
+                    except: pass
             return {"content": {"recommendations": recs}}
     except Exception as e:
-        print(f"❌ Ошибка в AI эндпоинте: {e}")
         return {"content": {"error": str(e)}}
 
-# --- Auth ---
 @app.get("/login")
 def login():
     params = {
@@ -384,7 +364,6 @@ async def auth(request: Request):
     params = request.query_params
     if "openid.identity" in params:
         sid = params["openid.identity"].split("/")[-1]
-        
         user_name = "Steam User"
         user_avatar = ""
         try:
@@ -395,15 +374,12 @@ async def auth(request: Request):
                 player = data['response']['players'][0]
                 user_name = player.get('personaname', 'Steam User')
                 user_avatar = player.get('avatarmedium', '') or player.get('avatarfull', '')
-        except Exception as e:
-            print(f"Auth error: {e}")
-
+        except: pass
         resp = RedirectResponse("/")
         resp.set_cookie("user_steam_id", sid)
         resp.set_cookie("user_name", quote(user_name))
         resp.set_cookie("user_avatar", user_avatar)
         return resp
-        
     return RedirectResponse("/")
 
 @app.get("/logout")
