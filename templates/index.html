@@ -155,11 +155,10 @@
 
                 const steamIds = gamesList.map(g => g.appid);
                 const playtimes = {};
-                // Собираем имена, чтобы отправить их на сервер!
                 const gameNames = {};
                 gamesList.forEach(g => {
                     playtimes[g.appid] = g.playtime;
-                    gameNames[g.appid] = g.name; // Сохраняем имя
+                    gameNames[g.appid] = g.name; 
                 });
 
                 const batchResp = await fetch('/api/games-batch', {
@@ -168,7 +167,7 @@
                     body: JSON.stringify({ 
                         steam_ids: steamIds, 
                         playtimes: playtimes,
-                        game_names: gameNames // Отправляем имена!
+                        game_names: gameNames 
                     })
                 });
 
@@ -242,7 +241,8 @@
                 if (type === 'price') {
                     const getP = (s) => {
                         if (!s || s === "Бесплатно") return 0;
-                        if (s === "Не продается" || s === "Нет данных") return -1;
+                        if (s.includes("Недоступно") || s.includes("Не продается")) return -1;
+                        // Удаляем всё кроме цифр и запятой
                         return parseFloat(s.replace(/[^0-9,.]/g, '').replace(',', '.'));
                     };
                     return getP(b.price_str) - getP(a.price_str);
@@ -255,7 +255,7 @@
             if (loadedGames.length === 0) { alert("Сначала загрузите игры!"); return; }
             const block = document.getElementById('ai-block');
             block.style.display = 'block';
-            block.innerHTML = '<span class="spinner"></span> ИИ анализирует...';
+            block.innerHTML = '<span class="spinner"></span> ИИ анализирует (до 45 сек)... Смотрите в консоль если не работает.';
             try {
                 const resp = await fetch('/api/recommend', {
                     method: 'POST',
@@ -277,7 +277,7 @@
                     html += '</div>';
                     block.innerHTML = html;
                 } else {
-                    block.innerHTML = 'ИИ не дал рекомендаций.';
+                    block.innerHTML = 'ИИ не дал рекомендаций (проверьте консоль сервера).';
                 }
             } catch(e) {
                 block.innerHTML = 'Ошибка соединения с AI.';
