@@ -77,23 +77,23 @@ async def request_store(client, app_ids, region="ru"):
         "appids": ids_str,
         "cc": region,
         "l": "russian",
-        "filters": "basic_info,price_overview,genres" 
+        # Убрали filters, чтобы уменьшить шанс глюков API
     }
     
-    # Обновленные заголовки, чтобы меньше палиться
+    # ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ: Добавили Cookie
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "*/*",
         "Referer": "https://store.steampowered.com/",
+        "Cookie": "birthtime=0; lastagecheckage=1-0-1900; wants_mature_content=1;" 
     }
 
     try:
-        # follow_redirects=True иногда помогает, если стим кидает редирект
         resp = await client.get(url, params=params, headers=headers, timeout=30.0, follow_redirects=True)
         
         if resp.status_code == 429:
             print(f"🛑 429 Rate Limit ({region})! Спим 5 сек...")
-            await asyncio.sleep(5) # Уменьшил время сна, чтобы не вис сайт
+            await asyncio.sleep(5)
             return None
             
         if resp.status_code == 403:
