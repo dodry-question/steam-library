@@ -52,7 +52,7 @@
         
         .price-block { display: flex; justify-content: space-between; align-items: center; background-color: #00000033; padding: 6px 10px; margin-top: auto; }
         .price { font-size: 13px; color: #acb2b8; }
-        .price.free { color: #a4d007; font-weight: bold; } /* Стиль для бесплатно */
+        .price.free { color: #a4d007; font-weight: bold; } 
         .discount-badge { background-color: #4c6b22; color: #beee11; padding: 1px 4px; border-radius: 1px; font-size: 13px; font-weight: bold; }
 
         #ai-block { display: none; background: #121418; border: 1px solid #6b2cf5; padding: 20px; margin-bottom: 30px; }
@@ -164,7 +164,7 @@
                 const playtimes = {};
                 const gameNames = {};
                 gamesList.forEach(g => {
-                    playtimes[g.appid] = g.playtime;
+                    playtimes[g.appid] = g.playtime_forever;
                     gameNames[g.appid] = g.name; 
                 });
 
@@ -225,9 +225,10 @@
             let priceClass = "price";
             if (game.price_str === "Бесплатно") priceClass += " free";
 
+            // Если картинки нет, подставляем заглушку
             div.innerHTML = `
                 <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
-                    <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130?text=No+Image'">
+                    <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
                     <div class="info">
                         <h2>${game.name}</h2>
                         <div class="genres">${game.genres || ""}</div>
@@ -282,7 +283,7 @@
                         html += `
                         <div class="card" style="animation:none;">
                              <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
-                                <img src="${r.image_url}" loading="lazy">
+                                <img src="${r.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
                                 <div class="info">
                                     <h2>${r.name}</h2>
                                     <div class="playtime" style="color: #beee11; margin-top:5px; line-height:1.2;">${r.ai_reason}</div>
