@@ -73,18 +73,19 @@ async def request_store(client, app_ids, region="ru"):
     ids_str = ",".join(map(str, app_ids))
     url = "https://store.steampowered.com/api/appdetails"
     
+    # ВЕРНУЛИ filters, чтобы запрос был легким и не вызывал ошибку 400
     params = {
         "appids": ids_str,
         "cc": region,
         "l": "russian",
-        # Убрали filters, чтобы уменьшить шанс глюков API
+        "filters": "basic_info,price_overview,genres" 
     }
     
-    # ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ: Добавили Cookie
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*",
+        "Accept": "application/json",
         "Referer": "https://store.steampowered.com/",
+        # Cookie оставляем, чтобы видеть цены 18+ игр
         "Cookie": "birthtime=0; lastagecheckage=1-0-1900; wants_mature_content=1;" 
     }
 
