@@ -35,7 +35,6 @@
 
         .gallery { display: flex; flex-wrap: wrap; gap: 16px; }
         
-        /* КАРТОЧКА ИГРЫ (ЕДИНАЯ ДЛЯ ВСЕХ) */
         .card { 
             background-color: #16202d; width: 280px; position: relative; 
             box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid rgba(0,0,0,0.2); 
@@ -53,6 +52,7 @@
         
         .price-block { display: flex; justify-content: space-between; align-items: center; background-color: #00000033; padding: 6px 10px; margin-top: auto; }
         .price { font-size: 13px; color: #acb2b8; }
+        .price.free { color: #a4d007; font-weight: bold; } /* Стиль для бесплатно */
         .discount-badge { background-color: #4c6b22; color: #beee11; padding: 1px 4px; border-radius: 1px; font-size: 13px; font-weight: bold; }
 
         #ai-block { display: none; background: #121418; border: 1px solid #6b2cf5; padding: 20px; margin-bottom: 30px; }
@@ -222,6 +222,9 @@
             let timeStr = hours > 0 ? `${hours} ч. в игре` : "Не запускалась";
             let discountHtml = game.discount_percent > 0 ? `<div class="discount-badge">-${game.discount_percent}%</div>` : '<div></div>';
             
+            let priceClass = "price";
+            if (game.price_str === "Бесплатно") priceClass += " free";
+
             div.innerHTML = `
                 <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
                     <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130?text=No+Image'">
@@ -233,7 +236,7 @@
                 </a>
                 <div class="price-block">
                     ${discountHtml}
-                    <div class="price">${game.price_str || ""}</div>
+                    <div class="${priceClass}">${game.price_str || ""}</div>
                 </div>
             `;
             document.getElementById('container').appendChild(div);
@@ -295,7 +298,7 @@
                     html += '</div>';
                     block.innerHTML = html;
                 } else {
-                    block.innerHTML = 'ИИ не дал рекомендаций.';
+                    block.innerHTML = 'ИИ не дал рекомендаций или возникла ошибка формата.';
                 }
             } catch(e) {
                 block.innerHTML = 'Ошибка соединения с AI.';

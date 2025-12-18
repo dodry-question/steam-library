@@ -68,7 +68,7 @@ async def on_startup():
 # --- Вспомогательные функции ---
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
-    """Запрашиваем RU регион, БЕЗ ФИЛЬТРОВ (чтобы точно получить is_free)"""
+    """Запрашиваем RU регион."""
     if not app_ids: return {}
     
     ids_str = ",".join(map(str, app_ids))
@@ -84,8 +84,8 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
 
     async with STORE_API_LOCK:
         try:
-            await asyncio.sleep(1.5) # Пауза
-            resp = await client.get(url, params=params, headers=headers, timeout=25.0)
+            await asyncio.sleep(1.6) # Чуть увеличили задержку для надежности
+            resp = await client.get(url, params=params, headers=headers, timeout=30.0)
             
             if resp.status_code == 429:
                 print("🛑 429 Rate Limit! Спим 60 сек...")
@@ -106,14 +106,18 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     success = data.get('success', False)
     game_data = data.get('data', {})
 
-    # Если API вернул ошибку
+    # Если API вернул false (игра недоступна в регионе или ошибка)
     if not success:
+        # Для отладки в логах, если это CS2 (730)
+        if steam_id == 730:
+            print(f"⚠️ CS2 Store API returned success=False. Region locked?")
+            
         return Game(
             steam_id=steam_id,
             name=known_name,
             image_url=image_url,
             price_str="Недоступно в РФ", 
-            genres="", # УБРАЛИ "Игра", теперь просто пусто
+            genres="",
             discount_percent=0,
             last_updated=datetime.now()
         )
@@ -125,23 +129,19 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     price_str = "Недоступно в РФ"
     discount = 0
 
-    # ЛОГИКА ЦЕН
     is_free = game_data.get('is_free', False)
     
     if is_free:
         price_str = "Бесплатно"
     elif 'price_overview' in game_data:
-        # Если есть цена в рублях
         p = game_data['price_overview']
         discount = p.get('discount_percent', 0)
         price_str = p.get('final_formatted', "")
-        if not price_str: # На всякий случай
+        if not price_str: 
              price_str = f"{int(p.get('final', 0) / 100)} руб."
     elif 'package_groups' in game_data and len(game_data['package_groups']) > 0:
-        # Иногда цены спрятаны в подписках, но для простоты:
         price_str = "См. в магазине" 
     else:
-        # Если не бесплатно и нет цены -> недоступно
         price_str = "Недоступно в РФ"
 
     return Game(
@@ -167,7 +167,7 @@ async def game_generator(payload: BatchRequest):
         names_map = payload.game_names 
         
         ids_to_fetch = []
-        # Обновляем кеш раз в 12 часов, чтобы цены были свежими
+        # Кеш 12 часов
         cutoff = datetime.now() - timedelta(hours=12) 
 
         with Session(engine) as session:
@@ -179,6 +179,7 @@ async def game_generator(payload: BatchRequest):
 
             for steam_id in ids:
                 game = existing_map.get(steam_id)
+                # Если игра есть и данные свежие
                 if game and game.last_updated > cutoff:
                     d = game.model_dump()
                     if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
@@ -190,7 +191,8 @@ async def game_generator(payload: BatchRequest):
         if not ids_to_fetch:
             return
 
-        CHUNK_SIZE = 25 
+        # Уменьшили размер пачки до 15, чтобы меньше ошибок 429/блокировок
+        CHUNK_SIZE = 15
         chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
 
         async with httpx.AsyncClient() as client:
@@ -309,20 +311,24 @@ async def recommend(request: Request):
         body = await request.json()
         games = body.get("games", [])
         
-        # 1. Отбираем игры, в которые играли более 5 часов (300 минут)
-        liked_games = [g for g in games if g.get('playtime', 0) > 300]
+        # ИСПРАВЛЕНИЕ 1: Правильный ключ playtime_forever
+        # Берем игры, где > 5 часов (300 минут)
+        liked_games = [g for g in games if g.get('playtime_forever', 0) > 300]
         
-        # Если таких игр нет, берем топ-20 по времени (на всякий случай)
+        # Если таких игр нет, берем топ-20 по времени (fallback)
         if not liked_games:
-            liked_games = sorted(games, key=lambda x: x.get('playtime', 0), reverse=True)[:20]
+            liked_games = sorted(games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:20]
 
-        # 2. Выбираем 3 случайные игры из этого списка
-        # min нужен, чтобы не упасть, если игр всего 1 или 2
+        # Выбираем 3 случайные
         selection = random.sample(liked_games, min(3, len(liked_games)))
-        
         names = ", ".join([g['name'] for g in selection])
         
-        prompt = f"Based on the fact that I enjoy playing: {names}. Suggest 3 similar Steam games I might like. Format: ID: <appid> | Name: <name> | Reason: <short reason in Russian why specifically based on my selection>"
+        # ИСПРАВЛЕНИЕ 2: Жесткий промпт, чтобы ИИ не болтал
+        prompt = (
+            f"User likes: {names}. Suggest 3 similar Steam games. "
+            f"STRICT FORMAT REQUIRED: ID: <appid> | Name: <name> | Reason: <short russian text>. "
+            f"DO NOT write introductory text. DO NOT ask questions. JUST THE LIST."
+        )
         print(f"🤖 AI Request (Selected): {names}")
 
         async with httpx.AsyncClient() as client:
