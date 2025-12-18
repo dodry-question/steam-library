@@ -11,6 +11,7 @@
         h1 { color: #ffffff; text-shadow: 0 0 5px #66c0f4; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
         
         .user-profile { display: flex; align-items: center; justify-content: flex-end; }
+        .price.blocked { color: #ff6c6c; font-size: 12px; }
         .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; text-align: right; margin-right: 12px; }
         .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; white-space: nowrap; }
         .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; }
@@ -223,7 +224,13 @@
             let discountHtml = game.discount_percent > 0 ? `<div class="discount-badge">-${game.discount_percent}%</div>` : '<div></div>';
             
             let priceClass = "price";
-            if (game.price_str === "Бесплатно") priceClass += " free";
+            if (game.price_str === "Бесплатно") {
+    priceClass += " free";
+} else if (game.price_str.includes("Недоступно")) {
+    // Добавим красный цвет для недоступных
+    div.style.borderColor = "#ff444455"; // (Опционально) красная рамка
+    priceClass += " blocked"; // Можно добавить стиль в CSS
+}
 
             // Если картинки нет, подставляем заглушку
             div.innerHTML = `
