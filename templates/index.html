@@ -273,18 +273,15 @@
                 const recs = data.content.recommendations;
                 
                 if(recs && recs.length > 0) {
-                    // Генерируем карточки ТОЧНО ТАК ЖЕ, как в addCard
                     let html = '<h3 style="color:#fff; margin-top:0;">🤖 Рекомендации:</h3><div class="gallery" style="margin-top:10px;">';
                     
                     recs.forEach(r => {
-                        // Используем те же классы "card", "info", "price-block"
                         html += `
                         <div class="card" style="animation:none;">
                              <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
                                 <img src="${r.image_url}" loading="lazy">
                                 <div class="info">
                                     <h2>${r.name}</h2>
-                                    <div class="genres">✨ Совет от ИИ</div>
                                     <div class="playtime" style="color: #beee11; margin-top:5px; line-height:1.2;">${r.ai_reason}</div>
                                 </div>
                             </a>

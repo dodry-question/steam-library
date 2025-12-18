@@ -77,7 +77,6 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
         "appids": ids_str,
         "cc": "ru",       # Регион РФ
         "l": "russian",   # Язык
-        # "filters": ...  <-- УБРАЛИ ФИЛЬТРЫ, чтобы не терять данные
     }
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -114,7 +113,7 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
             name=known_name,
             image_url=image_url,
             price_str="Недоступно в РФ", 
-            genres="Игра",
+            genres="", # УБРАЛИ "Игра", теперь просто пусто
             discount_percent=0,
             last_updated=datetime.now()
         )
@@ -309,11 +308,22 @@ async def recommend(request: Request):
     try:
         body = await request.json()
         games = body.get("games", [])
-        top = sorted(games, key=lambda x: x.get('playtime', 0), reverse=True)[:10]
-        names = ", ".join([g['name'] for g in top])
         
-        prompt = f"I like: {names}. Suggest 3 similar Steam games. Format: ID: <appid> | Name: <name> | Reason: <short reason in Russian>"
-        print(f"🤖 AI Request: {prompt[:50]}...")
+        # 1. Отбираем игры, в которые играли более 5 часов (300 минут)
+        liked_games = [g for g in games if g.get('playtime', 0) > 300]
+        
+        # Если таких игр нет, берем топ-20 по времени (на всякий случай)
+        if not liked_games:
+            liked_games = sorted(games, key=lambda x: x.get('playtime', 0), reverse=True)[:20]
+
+        # 2. Выбираем 3 случайные игры из этого списка
+        # min нужен, чтобы не упасть, если игр всего 1 или 2
+        selection = random.sample(liked_games, min(3, len(liked_games)))
+        
+        names = ", ".join([g['name'] for g in selection])
+        
+        prompt = f"Based on the fact that I enjoy playing: {names}. Suggest 3 similar Steam games I might like. Format: ID: <appid> | Name: <name> | Reason: <short reason in Russian why specifically based on my selection>"
+        print(f"🤖 AI Request (Selected): {names}")
 
         async with httpx.AsyncClient() as client:
             resp = await client.post("https://text.pollinations.ai/", json={
