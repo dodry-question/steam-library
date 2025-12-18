@@ -67,102 +67,73 @@ async def on_startup():
 
 # --- Вспомогательные функции ---
 
-# --- Вспомогательные функции ---
-
 async def request_store(client, app_ids, region="ru"):
     ids_str = ",".join(map(str, app_ids))
     url = "https://store.steampowered.com/api/appdetails"
     
+    # Оптимизированные параметры. is_free лежит в basic_info.
     params = {
         "appids": ids_str,
         "cc": region,
         "l": "russian",
-        "filters": "basic_info,price_overview,genres"
+        "filters": "basic_info,price_overview,genres" 
     }
     
-    # ИСПРАВЛЕННЫЙ COOKIE (birthtime не 0, а реальная дата)
+    # Эмулируем обычный браузер
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
         "Referer": "https://store.steampowered.com/",
-        "Cookie": "wants_mature_content=1; birthtime=189302401; lastagecheckage=1-0-1900;"
+        "Origin": "https://store.steampowered.com"
     }
 
     try:
-        # Убрали follow_redirects=True, иногда это вызывает 400 при редиректе на проверку возраста
         resp = await client.get(url, params=params, headers=headers, timeout=30.0)
-        
         if resp.status_code == 429:
-            print(f"🛑 429 Rate Limit ({region})! Спим 5 сек...")
-            await asyncio.sleep(5)
+            print("🛑 429 Rate Limit! Спим 60 сек...")
+            await asyncio.sleep(60)
             return None
-            
-        if resp.status_code == 403:
-            print(f"⛔ 403 Forbidden ({region}) - IP заблокирован Steam")
-            return None
-
         if resp.status_code == 200:
             return resp.json()
-            
-        print(f"⚠️ Ошибка Steam {region}: Status {resp.status_code}")
     except Exception as e:
-        print(f"❌ Network Error {region}: {e}")
+        print(f"❌ Error fetching {region}: {e}")
     return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
     """
-    1. Пробуем RU.
-    2. Если RU вернул None (ошибка сети/бан) ИЛИ success=False -> собираем все такие ID.
-    3. Пробуем для них US.
+    Пытаемся получить данные для RU региона.
+    Если для каких-то игр success=False (Steam блокирует IP), пробуем US регион.
     """
     if not app_ids: return {}
 
-    final_result = {}
-    failed_ids = []
-
     async with STORE_API_LOCK:
-        await asyncio.sleep(1.0) # Небольшая пауза
+        await asyncio.sleep(1.5) # Базовая задержка
         
-        # --- ПОПЫТКА 1: RU ---
-        print(f"🔄 Запрос RU для {len(app_ids)} игр...")
+        # 1. Пробуем RU
         data_ru = await request_store(client, app_ids, "ru")
+        if data_ru is None: return {} # Если 429 или ошибка сети
 
-        if data_ru:
-            # Разбираем ответ RU
-            for app_id_str, data in data_ru.items():
-                if data.get("success"):
-                    final_result[app_id_str] = data
-                else:
-                    failed_ids.append(int(app_id_str))
-            
-            # Проверяем, есть ли ID, которые мы вообще не нашли в ответе (редкий баг API)
-            found_keys = set(map(int, data_ru.keys()))
-            for aid in app_ids:
-                if aid not in found_keys and aid not in failed_ids:
-                    failed_ids.append(aid)
-        else:
-            # Если data_ru is None (429/403 ошибка), значит ВСЕ игры не загрузились
-            print("⚠️ RU регион не ответил. Переходим на US fallback для всех.")
-            failed_ids = list(app_ids)
+        # Собираем ID, которые не удалось получить (success: False)
+        failed_ids = []
+        final_result = {}
 
-        # --- ПОПЫТКА 2: US (Fallback) ---
+        for app_id_str, data in data_ru.items():
+            if data.get("success"):
+                final_result[app_id_str] = data
+            else:
+                failed_ids.append(int(app_id_str))
+        
+        # 2. Если есть неудачные, пробуем US (чтобы хоть какая-то цена была)
         if failed_ids:
-            print(f"🇺🇸 Fallback US для {len(failed_ids)} игр...")
-            await asyncio.sleep(1.0)
+            print(f"⚠️ {len(failed_ids)} игр не отдались для RU. Пробуем US fallback...")
+            await asyncio.sleep(1.1) # Небольшая пауза перед повтором
             data_us = await request_store(client, failed_ids, "us")
             
             if data_us:
                 for app_id_str, data in data_us.items():
-                    if data.get("success"):
-                        # Ставим метку, что взяли из US
-                        if "data" in data:
-                            data["data"]["is_ru_blocked"] = True
-                        final_result[str(app_id_str)] = data
-                    else:
-                        # Даже в США не нашлось (удаленная игра) или ошибка
-                        pass
-            else:
-                 print("⛔ US регион тоже не ответил.")
+                    # Помечаем, что это не рубли, если нужно (пока просто сохраним как есть)
+                    final_result[app_id_str] = data
 
         return final_result
 
@@ -171,16 +142,14 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     
     success = data.get('success', False)
     game_data = data.get('data', {})
-    is_blocked_in_ru = game_data.get('is_ru_blocked', False)
 
-    # Если данных нет совсем (Steam забанил оба запроса)
+    # Если совсем ничего не удалось получить
     if not success:
         return Game(
             steam_id=steam_id,
             name=known_name,
             image_url=image_url,
-            # Пишем нейтральный текст вместо "Ошибка данных"
-            price_str="Цену не узнать", 
+            price_str="Недоступно", # Изменили текст
             genres="",
             discount_percent=0,
             last_updated=datetime.now()
@@ -192,26 +161,32 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
 
     price_str = "Недоступно"
     discount = 0
+
     is_free = game_data.get('is_free', False)
     
-    if is_blocked_in_ru:
-        price_str = "Недоступно в РФ"
-    elif is_free:
+    if is_free:
         price_str = "Бесплатно"
     elif 'price_overview' in game_data:
         p = game_data['price_overview']
         discount = p.get('discount_percent', 0)
         raw_price = p.get('final_formatted', "")
         
+        # Если API вернуло цену (в рублях или долларах)
         if raw_price:
             price_str = raw_price
         else:
+            # Fallback расчет (иногда final приходит числом копеек/центов)
             currency = p.get('currency', '')
             val = p.get('final', 0) / 100
             price_str = f"{int(val)} {currency}"
             
     elif 'package_groups' in game_data and len(game_data['package_groups']) > 0:
         price_str = "См. в магазине" 
+    
+    # Если данные пришли, но цены нет и не бесплатно (например, игра снята с продажи)
+    if not is_free and price_str == "Недоступно":
+        # Иногда бывает release_date: coming soon
+        pass
 
     return Game(
         steam_id=steam_id,
