@@ -141,7 +141,7 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
             discount = p.get('discount_percent', 0)
     
     # Если это fallback (данные из США), добавляем спец. маркер
-    if is_fallback and success and price_val != "В библиотеке":
+    if is_fallback and success and price_val not in ["Нет в продаже", "Бесплатно"]:
         final_price = f"LOCKED|{price_val}"
     else:
         final_price = price_val
