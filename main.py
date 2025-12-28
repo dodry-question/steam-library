@@ -77,30 +77,31 @@ async def on_startup():
 # --- Вспомогательные функции ---
 
 async def request_store(client, app_ids, region="ru"):
+    if not app_ids: return None
     ids_str = ",".join(map(str, app_ids))
     url = "https://store.steampowered.com/api/appdetails"
     
     params = {
         "appids": ids_str,
         "cc": region,
-        "l": "russian"
+        "l": "russian",
+        # Фильтры обрезают лишний вес ответа (описания, скрины), оставляя только цены и жанры
+        "filters": "price_overview,genres,name,is_free" 
     }
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        # Куки крайне важны: без них Steam может не отдавать данные по играм 18+
-        "Cookie": "lastagecheckage=1-0-1900; birthtime=-2208988800; mat_age=1900"
+        # Используем "безопасную" дату рождения (1990 год)
+        "Cookie": "lastagecheckage=1-0-1990; birthtime=631152001; mat_age=1990"
     }
 
     try:
         resp = await client.get(url, params=params, headers=headers, timeout=15.0)
         if resp.status_code == 200:
             return resp.json()
-        elif resp.status_code == 429:
-            print(f"🛑 [CC={region}] Ошибка 429: Steam ограничил запросы. Нужно подождать.")
         else:
-            print(f"⚠️ [CC={region}] Ошибка {resp.status_code}. Ответ: {resp.text[:100]}")
+            print(f"⚠️ [CC={region}] Ошибка {resp.status_code}. Для пачки: {ids_str[:30]}...")
     except Exception as e:
         print(f"❌ Ошибка запроса ({region}): {e}")
     return None
@@ -112,7 +113,7 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
         # 1. Сначала пробуем получить данные без привязки к региону (глобальные)
         # Это часто помогает обойти "заглушки" для RU IP
         data_global = await request_store(client, app_ids, region="us")
-        await asyncio.sleep(1.0) 
+        await asyncio.sleep(2.0) 
         
         # 2. Пробуем получить именно RU цены
         data_ru = await request_store(client, app_ids, region="ru")
@@ -212,7 +213,7 @@ async def game_generator(payload: BatchRequest):
             return
 
         # Размер пачки 15 - оптимально для стабильности
-        CHUNK_SIZE = 15
+        CHUNK_SIZE = 10
         chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
 
         async with httpx.AsyncClient() as client:
