@@ -98,22 +98,26 @@ async def request_store(client, app_id, region="ru"):
         return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
-    if not app_ids: return {}
+    # Гарантируем возврат кортежа из двух элементов (данные, флаг)
+    if not app_ids: return {}, False
+    
     target_id = app_ids[0]
     sid_str = str(target_id)
 
     async with STORE_API_LOCK:
-        # 1. Сначала пробуем RU
+        # 1. Пробуем RU
         data = await request_store(client, target_id, region="ru")
         is_fallback = False
         
-        # 2. Если в RU пусто или успех: False, идем в US
+        # 2. Если заблокировано (None) или нет успеха — пробуем US
         if not data or not data.get(sid_str, {}).get('success'):
-            await asyncio.sleep(1.0) # Чуть больше пауза, чтобы не злить Стим
+            await asyncio.sleep(2.0) # Увеличили паузу, чтобы Стим остыл
             data = await request_store(client, target_id, region="us")
             is_fallback = True
         
-        return data, is_fallback # Возвращаем данные и пометку
+        # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: если оба запроса вернули None, возвращаем пустой словарь
+        final_data = data if data is not None else {}
+        return final_data, is_fallback
     
 def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool = False) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
@@ -194,8 +198,13 @@ async def game_generator(payload: BatchRequest):
 
         async with httpx.AsyncClient() as client:
             for chunk in chunks:
-                # ИСПРАВЛЕНИЕ: Распаковываем кортеж (теперь получаем и данные, и флаг)
                 store_resp, is_fallback = await fetch_steam_store_data(client, chunk)
+                
+                # Если Steam вернул пустоту (бан), скипаем этот чанк, чтобы не упасть
+                if not store_resp:
+                    print(f"⚠️ Пропуск игры {chunk[0]} из-за блокировки API")
+                    continue 
+
                 games_to_save = []
                 
                 for sid in chunk:
