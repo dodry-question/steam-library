@@ -5,7 +5,7 @@ import random
 import asyncio
 import httpx
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from urllib.parse import quote, unquote
