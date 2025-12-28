@@ -80,7 +80,6 @@ async def request_store(client, app_ids, region="ru"):
     ids_str = ",".join(map(str, app_ids))
     url = "https://store.steampowered.com/api/appdetails"
     
-    # Убираем жесткие фильтры, иногда они мешают Steam отдавать данные
     params = {
         "appids": ids_str,
         "cc": region,
@@ -88,15 +87,20 @@ async def request_store(client, app_ids, region="ru"):
     }
     
     headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Cookie": "lastagecheckage=1-0-1990; birthtime=631152001;" # Обманываем фильтр возраста
-}
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        # Куки крайне важны: без них Steam может не отдавать данные по играм 18+
+        "Cookie": "lastagecheckage=1-0-1900; birthtime=-2208988800; mat_age=1900"
+    }
 
     try:
         resp = await client.get(url, params=params, headers=headers, timeout=15.0)
         if resp.status_code == 200:
             return resp.json()
+        elif resp.status_code == 429:
+            print(f"🛑 [CC={region}] Ошибка 429: Steam ограничил запросы. Нужно подождать.")
+        else:
+            print(f"⚠️ [CC={region}] Ошибка {resp.status_code}. Ответ: {resp.text[:100]}")
     except Exception as e:
         print(f"❌ Ошибка запроса ({region}): {e}")
     return None
