@@ -311,22 +311,48 @@
 }
 
         function sortGames(type) {
-            const container = document.getElementById('container');
-            if (loadedGames.length === 0) return;
-            container.innerHTML = '';
-            loadedGames.sort((a, b) => {
-                if (type === 'playtime') return b.playtime_forever - a.playtime_forever;
-                if (type === 'price') {
-                    const getP = (s) => {
-                        if (!s || s === "Бесплатно") return 0;
-                        if (s.includes("Недоступно") || s.includes("Не продается")) return -1;
-                        return parseFloat(s.replace(/[^0-9,.]/g, '').replace(',', '.'));
-                    };
-                    return getP(b.price_str) - getP(a.price_str);
-                }
-            });
-            loadedGames.forEach(addCard);
+    const container = document.getElementById('container');
+    if (loadedGames.length === 0) return;
+
+    // Показываем, что идет сортировка
+    container.innerHTML = '';
+
+    loadedGames.sort((a, b) => {
+        if (type === 'playtime') {
+            return b.playtime_forever - a.playtime_forever;
         }
+
+        if (type === 'price') {
+            const getPriceValue = (s) => {
+                if (!s || s === "Бесплатно") return 0;
+                
+                let targetString = s;
+                // Если игра заблокирована, берем цену из второй части (после |)
+                if (s.startsWith("LOCKED|")) {
+                    targetString = s.split("|")[1];
+                }
+
+                if (targetString.includes("Нет в продаже") || targetString.includes("Недоступно")) {
+                    return -1; // Уводим игры без цены в самый низ
+                }
+
+                // Очищаем строку: убираем пробелы, меняем запятую на точку, оставляем только цифры и точку
+                let clean = targetString.replace(/\s/g, '').replace(',', '.').replace(/[^0-9.]/g, '');
+                let num = parseFloat(clean);
+                
+                return isNaN(num) ? -1 : num;
+            };
+
+            let valA = getPriceValue(a.price_str);
+            let valB = getPriceValue(b.price_str);
+
+            return valB - valA; // От дорогих к дешевым
+        }
+    });
+
+    // Перерисовываем отсортированные карточки
+    loadedGames.forEach(addCard);
+}
 
         async function getAI() {
             if (loadedGames.length === 0) { alert("Сначала загрузите игры!"); return; }
