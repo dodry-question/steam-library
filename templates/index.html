@@ -203,35 +203,38 @@
 </div>
 
     <div class="controls">
-        {% if user_id %}
-            <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
-        {% endif %}
-        <button onclick="clearList()" class="btn-clear">Очистить</button>
-        <span style="color: #454d58;">|</span>
-        <button onclick="sortGames('playtime')" class="btn-sort">По времени</button>
-        <button onclick="sortGames('price')" class="btn-sort">По цене</button>
+    {% if user_id %}
+        <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
+    {% endif %}
+    <button onclick="clearList()" class="btn-clear">Очистить</button>
+    <span style="color: #454d58;">|</span>
+    <button onclick="sortGames('playtime')" class="btn-sort">По времени</button>
+    <button onclick="sortGames('price')" class="btn-sort">По цене</button>
 
-        <div class="controls-right">
-    <!-- Компактный выбор настроения -->
-    <div class="mood-container">
-        <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
-            <span id="current-mood-emoji">💎</span>
-            <span class="arrow">▼</span>
+    <div class="controls-right">
+        <!-- Компактный выбор настроения (Смайлик + стрелочка) -->
+        <div class="mood-container">
+            <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
+                <span id="current-mood-emoji">💎</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div class="mood-menu" id="mood-menu">
+                <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
+                <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
+                <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
+                <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
+                <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
+            </div>
         </div>
-        <div class="mood-menu" id="mood-menu">
-            <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
-            <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
-            <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
-            <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
-            <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
+
+        <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
+        
+        <div style="display: flex;">
+            <input type="text" id="friend-id" class="input-friend" placeholder="ID друга / Ссылка">
+            <button onclick="loadLibrary(true)" class="btn-friend">Найти</button>
         </div>
     </div>
-
-    <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
-    <div style="display: flex;">
-        <input type="text" id="friend-id" class="input-friend" placeholder="ID друга / Ссылка">
-        <button onclick="loadLibrary(true)" class="btn-friend">Найти</button>
-    </div>
+</div>
 </div>
             <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
             <div style="display: flex;">
