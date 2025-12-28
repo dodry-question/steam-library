@@ -129,7 +129,7 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
     genres_str = ", ".join(genres_list) if genres_list else ""
 
     # Логика определения цены
-    price_val = "В библиотеке"
+    price_val = "Нет в продаже"
     discount = 0
 
     if success:
