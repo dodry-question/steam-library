@@ -136,6 +136,13 @@
         <button onclick="sortGames('price')" class="btn-sort">По цене</button>
 
         <div class="controls-right">
+            <select id="ai-mood" class="input-friend" style="width: 140px; border-radius: 2px;">
+                <option value="hidden gems">Скрытые жемчужины</option>
+                <option value="experimental indie">Экспериментальное инди</option>
+                <option value="hardcore challenge">Хардкор и вызов</option>
+                <option value="relaxing atmosphere">Медитативное / Отдых</option>
+                <option value="story rich">Глубокий сюжет</option>
+            </select>
             <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
             <div style="display: flex;">
                 <input type="text" id="friend-id" class="input-friend" placeholder="ID друга / Ссылка">
@@ -355,17 +362,21 @@
 }
 
         async function getAI() {
-            if (loadedGames.length === 0) { alert("Сначала загрузите игры!"); return; }
-            const block = document.getElementById('ai-block');
-            block.style.display = 'block';
-            block.innerHTML = '<span class="spinner"></span> ИИ анализирует...';
-            
-            try {
-                const resp = await fetch('/api/recommend', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ games: loadedGames })
-                });
+    if (loadedGames.length === 0) { alert("Сначала загрузите игры!"); return; }
+    const mood = document.getElementById('ai-mood').value; // Берем выбранное настроение
+    const block = document.getElementById('ai-block');
+    block.style.display = 'block';
+    block.innerHTML = '<span class="spinner"></span> ИИ анализирует ваш профиль...';
+    
+    try {
+        const resp = await fetch('/api/recommend', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                games: loadedGames,
+                mood: mood // Отправляем настроение на бэкенд
+            })
+        });
                 const data = await resp.json();
                 const recs = data.content.recommendations;
                 

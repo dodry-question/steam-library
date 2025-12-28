@@ -336,56 +336,66 @@ async def add_game_manual(steam_id: int = Form(...)):
 async def recommend(request: Request):
     try:
         body = await request.json()
-        games = body.get("games", [])
+        all_games = body.get("games", [])
+        mood = body.get("mood", "hidden gems") # Получаем настроение
         
-        # Выбираем, на основе чего рекомендовать (игры > 5 часов)
-        liked_games = [g for g in games if g.get('playtime_forever', 0) > 300]
-        if not liked_games:
-            liked_games = sorted(games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:15]
+        # 1. Формируем "Ядро интересов" - ТОП-10 самых играемых игр
+        top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
+        core_names = ", ".join([g['name'] for g in top_played])
+        
+        # 2. Формируем список исключений (чтобы не предлагал то, что есть)
+        owned_names = ", ".join([g['name'] for g in all_games[:50]]) # Первые 50 для краткости промпта
 
-        selection = random.sample(liked_games, min(3, len(liked_games)))
-        names_to_ai = ", ".join([g['name'] for g in selection])
-        
-        # ОБНОВЛЕННЫЙ ПРОМПТ: убрали ID
+        # 3. Улучшенный промпт по советам нейросети
         prompt = (
-            f"Пользователю нравятся: {names_to_ai}. Посоветуй 3 похожие игры в Steam. "
-            f"ФОРМАТ: Name: <название> | Reason: <короткое описание на русском>. "
-            f"Не пиши вводный текст, только список."
+            f"Ты — опытный игровой куратор. Анализируй ядро интересов игрока: {core_names}. "
+            f"Найди 3 игры в Steam, которые попадают в этот психологический профиль, ориентируясь на категорию '{mood}'. "
+            f"ПРАВИЛА: "
+            f"1. Избегай очевидных хитов из топ-50 Steam (никаких GTA, Witcher, Skyrim). Ищи скрытые жемчужины. "
+            f"2. НЕ ПРЕДЛАГАЙ игры из этого списка (они уже куплены): {owned_names}. "
+            f"3. ФОРМАТ: Name: <название> | Reason: <почему подходит (2 живых предложения на русском)>. "
+            f"Не используй вводные фразы, пиши сразу список."
         )
 
         async with httpx.AsyncClient() as client:
+            # Делаем запрос к ИИ
             resp = await client.post("https://text.pollinations.ai/", json={
-                "messages": [{"role": "user", "content": prompt}],
-                "model": "openai"
+                "messages": [{"role": "system", "content": "You are a professional game curator."},
+                             {"role": "user", "content": prompt}],
+                "model": "openai",
+                "seed": random.randint(1, 99999)
             }, timeout=45.0)
             
             text = resp.text
+            print(f"🤖 AI Response: {text}") # Для отладки в консоли
+            
             recs = []
-
-            # Парсим ответ ИИ
             for line in text.split('\n'):
                 if "Name:" in line and "|" in line:
                     try:
                         parts = line.split("|")
-                        game_name = parts[0].replace("Name:", "").strip()
+                        g_name = parts[0].replace("Name:", "").strip()
                         reason = parts[1].replace("Reason:", "").strip()
 
-                        # ШАГ ПОИСКА: Ищем реальный AppID по названию от ИИ
-                        real_id = await search_steam_game(client, game_name)
+                        # Наша Стратегия №1: Ищем реальный AppID по названию
+                        real_id = await search_steam_game(client, g_name)
 
                         if real_id:
-                            recs.append({
-                                "steam_id": real_id,
-                                "name": game_name,
-                                "ai_reason": reason,
-                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg",
-                                "price_str": "Узнать цену", # Можно позже догрузить реальную
-                                "discount_percent": 0
-                            })
+                            # Проверяем, нет ли этой игры уже в библиотеке (на всякий случай)
+                            if not any(g['appid'] == real_id for g in all_games if 'appid' in g):
+                                recs.append({
+                                    "steam_id": real_id,
+                                    "name": g_name,
+                                    "ai_reason": reason,
+                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg",
+                                    "price_str": "Открыть в Steam",
+                                    "discount_percent": 0
+                                })
                     except: continue
             
             return {"content": {"recommendations": recs}}
     except Exception as e:
+        print(f"❌ AI Error: {e}")
         return {"content": {"error": str(e)}}
     
 @app.get("/login")
