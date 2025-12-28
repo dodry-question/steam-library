@@ -76,59 +76,46 @@ async def on_startup():
 
 # --- Вспомогательные функции ---
 
-async def request_store(client, app_ids, region="ru"):
-    if not app_ids: return None
-    
-    # Берем только первый ID, так как мы перешли на CHUNK_SIZE = 1
-    appid = app_ids[0]
+async def request_store(client, app_id, region="ru"):
     url = "https://store.steampowered.com/api/appdetails"
-    
     params = {
-        "appids": str(appid),
+        "appids": str(app_id),
         "cc": region,
-        "l": "russian"
+        "l": "russian",
+        "filters": "price_overview,genres,name,is_free" # Просим только нужное
     }
-    
-    # Минимальные заголовки, чтобы не вызвать подозрение
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
     }
 
     try:
-        # Добавляем follow_redirects=True, это критично для некоторых регионов
-        resp = await client.get(url, params=params, headers=headers, timeout=10.0, follow_redirects=True)
-        
+        resp = await client.get(url, params=params, headers=headers, timeout=10.0)
         if resp.status_code == 200:
             return resp.json()
         elif resp.status_code == 429:
-            print(f"🛑 [CC={region}] 429: Слишком много запросов. Стим просит паузу.")
-            await asyncio.sleep(5) # Если поймали 429, ждем дольше
-        else:
-            print(f"⚠️ [CC={region}] Ошибка {resp.status_code} для AppID {appid}")
-            
+            print(f"🛑 429: Слишком много запросов. Ждем 5 сек...")
+            await asyncio.sleep(5)
+        return None
     except Exception as e:
-        print(f"❌ Ошибка запроса для {appid}: {e}")
-    return None
+        return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
+    # Т.к. CHUNK_SIZE = 1, в app_ids всегда будет только один ID
     if not app_ids: return {}
+    target_id = app_ids[0]
+    sid_str = str(target_id)
 
     async with STORE_API_LOCK:
-        # Запрашиваем RU данные
-        data_ru = await request_store(client, app_ids, region="ru")
-        # Небольшая пауза между запросами к разным регионам (если нужно)
-        await asyncio.sleep(0.5) 
+        # 1. Пробуем получить RU данные
+        data = await request_store(client, target_id, region="ru")
         
-        # Если RU не ответил или вернул success: False, пробуем US (как fallback)
-        sid_str = str(app_ids[0])
-        if not data_ru or not data_ru.get(sid_str, {}).get('success'):
-             data_global = await request_store(client, app_ids, region="us")
-             return data_global if data_global else {}
+        # 2. Если RU не вернул успех, пробуем US (региональные ограничения)
+        if not data or not data.get(sid_str, {}).get('success'):
+            await asyncio.sleep(0.5) # Пауза перед вторым шансом
+            data = await request_store(client, target_id, region="us")
         
-        return data_ru if data_ru else {}
-
+        return data if data else {}
+    
 def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
     success = data.get('success', False)
