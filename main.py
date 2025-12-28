@@ -88,9 +88,10 @@ async def request_store(client, app_ids, region="ru"):
     }
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-    }
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Cookie": "lastagecheckage=1-0-1990; birthtime=631152001;" # Обманываем фильтр возраста
+}
 
     try:
         resp = await client.get(url, params=params, headers=headers, timeout=15.0)
@@ -128,6 +129,8 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
             else:
                 final_result[sid_str] = {"success": False}
 
+        print(f"Debug: For {sid_str} -> RU success: {ru_entry.get('success') if ru_entry else 'No Data'}, US success: {us_entry.get('success') if us_entry else 'No Data'}")
+
         return final_result
 
 def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
@@ -151,13 +154,12 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
             discount = p.get('discount_percent', 0)
             price_str = p.get('final_formatted', "")
             
-            # Если цена в долларах/евро (из-за fallback), добавим пометку
-            currency = p.get('currency', 'USD')
-            if currency != 'RUB' and price_str:
-                price_str += " (регион)"
+            # Проверяем валюту, если пусто
+            if not price_str:
+                price_str = f"{p.get('final', 0) / 100} {p.get('currency', '')}"
         else:
-            # Иногда игра доступна, но цена скрыта (например, в наборах)
-            price_str = "В магазине"
+            # Если цена не найдена, но успех есть - возможно, это подписка или игра без цены
+            price_str = "Смотреть в Steam"
     
     return Game(
         steam_id=steam_id,
