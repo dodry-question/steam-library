@@ -4,6 +4,8 @@ import re
 import random
 import asyncio
 import httpx
+from dotenv import load_dotenv
+load_dotenv()
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from urllib.parse import quote, unquote
@@ -17,7 +19,11 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 # --- НАСТРОЙКИ ---
 STEAM_API_KEY = os.environ.get("STEAM_API_KEY") 
-MY_DOMAIN = os.environ.get("MY_DOMAIN", "http://localhost:8000")
+if not STEAM_API_KEY:
+    print("❌ ОШИБКА: Ключ Steam не найден в .env!")
+else:
+    print(f"✅ Ключ загружен успешно: {STEAM_API_KEY[:5]}***") # Покажет первые 5 символов ключа
+MY_DOMAIN = os.environ.get("MY_DOMAIN", "http://localhost:8001")
 STORE_API_LOCK = asyncio.Lock()
 
 # --- База данных ---
@@ -423,15 +429,24 @@ async def auth(request: Request):
         sid = params["openid.identity"].split("/")[-1]
         user_name = "Steam User"
         user_avatar = ""
-        try:
-            api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={sid}"
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(api_url)
-                data = resp.json()
-                player = data['response']['players'][0]
-                user_name = player.get('personaname', 'Steam User')
-                user_avatar = player.get('avatarmedium', '') or player.get('avatarfull', '')
-        except: pass
+        
+        # Запрос данных профиля
+        api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={sid}"
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(api_url, timeout=10.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get('response', {}).get('players'):
+                        player = data['response']['players'][0]
+                        user_name = player.get('personaname', 'Steam User')
+                        # Берем аватарку покрупнее для красоты
+                        user_avatar = player.get('avatarfull', '') or player.get('avatarmedium', '')
+                else:
+                    print(f"❌ Steam API Profile Error: {resp.status_code}")
+            except Exception as e:
+                print(f"❌ Auth Error: {e}")
+
         resp = RedirectResponse("/")
         resp.set_cookie("user_steam_id", sid)
         resp.set_cookie("user_name", quote(user_name))
