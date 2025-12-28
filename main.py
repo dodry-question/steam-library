@@ -78,65 +78,56 @@ async def on_startup():
 
 async def request_store(client, app_ids, region="ru"):
     if not app_ids: return None
-    ids_str = ",".join(map(str, app_ids))
+    
+    # Берем только первый ID, так как мы перешли на CHUNK_SIZE = 1
+    appid = app_ids[0]
     url = "https://store.steampowered.com/api/appdetails"
     
     params = {
-        "appids": ids_str,
+        "appids": str(appid),
         "cc": region,
-        "l": "russian",
-        # Фильтры обрезают лишний вес ответа (описания, скрины), оставляя только цены и жанры
-        "filters": "price_overview,genres,name,is_free" 
+        "l": "russian"
     }
     
+    # Минимальные заголовки, чтобы не вызвать подозрение
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        # Используем "безопасную" дату рождения (1990 год)
-        "Cookie": "lastagecheckage=1-0-1990; birthtime=631152001; mat_age=1990"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
     }
 
     try:
-        resp = await client.get(url, params=params, headers=headers, timeout=15.0)
+        # Добавляем follow_redirects=True, это критично для некоторых регионов
+        resp = await client.get(url, params=params, headers=headers, timeout=10.0, follow_redirects=True)
+        
         if resp.status_code == 200:
             return resp.json()
+        elif resp.status_code == 429:
+            print(f"🛑 [CC={region}] 429: Слишком много запросов. Стим просит паузу.")
+            await asyncio.sleep(5) # Если поймали 429, ждем дольше
         else:
-            print(f"⚠️ [CC={region}] Ошибка {resp.status_code}. Для пачки: {ids_str[:30]}...")
+            print(f"⚠️ [CC={region}] Ошибка {resp.status_code} для AppID {appid}")
+            
     except Exception as e:
-        print(f"❌ Ошибка запроса ({region}): {e}")
+        print(f"❌ Ошибка запроса для {appid}: {e}")
     return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
     if not app_ids: return {}
 
     async with STORE_API_LOCK:
-        # 1. Сначала пробуем получить данные без привязки к региону (глобальные)
-        # Это часто помогает обойти "заглушки" для RU IP
-        data_global = await request_store(client, app_ids, region="us")
-        await asyncio.sleep(2.0) 
-        
-        # 2. Пробуем получить именно RU цены
+        # Запрашиваем RU данные
         data_ru = await request_store(client, app_ids, region="ru")
+        # Небольшая пауза между запросами к разным регионам (если нужно)
+        await asyncio.sleep(0.5) 
         
-        final_result = {}
-        for sid in app_ids:
-            sid_str = str(sid)
-            # Приоритет: данные из RU, если их нет — данные из US (глобальные)
-            # Если в RU стоит success: false, берем данные из US
-            ru_entry = data_ru.get(sid_str) if data_ru else None
-            us_entry = data_global.get(sid_str) if data_global else None
-            
-            if ru_entry and ru_entry.get("success"):
-                final_result[sid_str] = ru_entry
-            elif us_entry and us_entry.get("success"):
-                # Помечаем, что данные не из RU (для логов)
-                final_result[sid_str] = us_entry
-            else:
-                final_result[sid_str] = {"success": False}
-
-        print(f"Debug: For {sid_str} -> RU success: {ru_entry.get('success') if ru_entry else 'No Data'}, US success: {us_entry.get('success') if us_entry else 'No Data'}")
-
-        return final_result
+        # Если RU не ответил или вернул success: False, пробуем US (как fallback)
+        sid_str = str(app_ids[0])
+        if not data_ru or not data_ru.get(sid_str, {}).get('success'):
+             data_global = await request_store(client, app_ids, region="us")
+             return data_global if data_global else {}
+        
+        return data_ru if data_ru else {}
 
 def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
