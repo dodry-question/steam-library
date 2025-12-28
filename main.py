@@ -98,22 +98,15 @@ async def request_store(client, app_id, region="ru"):
         return None
     
 async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[int]:
-    """Ищет игру в магазине Steam по названию и возвращает её AppID"""
     search_url = "https://store.steampowered.com/api/storesearch/"
-    params = {
-        "term": name,
-        "l": "russian",
-        "cc": "ru"
-    }
+    params = {"term": name, "l": "russian", "cc": "ru"}
     try:
         resp = await client.get(search_url, params=params, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("total") > 0:
-                # Берем самый первый результат поиска
                 return data["items"][0]["id"]
-    except Exception as e:
-        print(f"❌ Ошибка поиска игры {name}: {e}")
+    except: pass
     return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
@@ -371,26 +364,29 @@ async def recommend(request: Request):
             
             recs = []
             for line in text.split('\n'):
-                if "Name:" in line and "|" in line:
+                if "|" in line: # Ищем разделитель, не привязываясь к "Name:"
                     try:
                         parts = line.split("|")
+                        # Очищаем от возможных префиксов "Name:" или "1. "
                         g_name = parts[0].replace("Name:", "").strip()
+                        # Убираем цифры в начале (типа "1. Darkest Dungeon")
+                        g_name = re.sub(r'^\d+\.\s*', '', g_name)
+                        
+                        # Очищаем причину от префикса "Reason:"
                         reason = parts[1].replace("Reason:", "").strip()
 
-                        # Наша Стратегия №1: Ищем реальный AppID по названию
+                        # Находим реальный ID
                         real_id = await search_steam_game(client, g_name)
 
                         if real_id:
-                            # Проверяем, нет ли этой игры уже в библиотеке (на всякий случай)
-                            if not any(g['appid'] == real_id for g in all_games if 'appid' in g):
-                                recs.append({
-                                    "steam_id": real_id,
-                                    "name": g_name,
-                                    "ai_reason": reason,
-                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg",
-                                    "price_str": "Открыть в Steam",
-                                    "discount_percent": 0
-                                })
+                            recs.append({
+                                "steam_id": real_id,
+                                "name": g_name,
+                                "ai_reason": reason,
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg",
+                                "price_str": "Открыть в Steam",
+                                "discount_percent": 0
+                            })
                     except: continue
             
             return {"content": {"recommendations": recs}}
