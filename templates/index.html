@@ -64,22 +64,32 @@
 </head>
 <body>
     
+    <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
     <h1>Моя Библиотека</h1>
+    
     {% if user_id %}
-        <div class="user-profile">
-            <div class="user-info-col">
-                <span class="user-name">{{ user_name }}</span>
-                <a href="/logout" class="btn-logout">Выйти</a>
+        <!-- Блок профиля, когда вошли -->
+        <div class="user-profile" style="display: flex; align-items: center;">
+            <div class="user-info-col" style="margin-right: 12px; text-align: right; display: flex; flex-direction: column; justify-content: center;">
+                <span class="user-name" style="display: block; line-height: 1.2;">{{ user_name }}</span>
+                <a href="/logout" class="btn-logout" style="display: block; line-height: 1.2;">Выйти</a>
             </div>
-            <div style="width: 42px; height: 42px; border: 1px solid #66c0f4; border-radius: 3px; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center;">
+            <div style="width: 40px; height: 40px; border: 1px solid #66c0f4; border-radius: 4px; overflow: hidden; background: #171a21; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                 <img src="{{ user_avatar }}" 
                      style="width: 100%; height: 100%; object-fit: contain;" 
                      onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
             </div>
         </div>
     {% else %}
-        <a href="/login" class="btn-steam"><div class="steam-icon"></div>Sign in through Steam</a>
+        <!-- Кнопка входа, когда не вошли -->
+        <div style="margin-left: auto;">
+            <a href="/login" class="btn-steam">
+                <div class="steam-icon"></div>
+                Sign in through Steam
+            </a>
+        </div>
     {% endif %}
+</div>
 
     <div class="controls">
         {% if user_id %}
