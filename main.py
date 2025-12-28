@@ -194,7 +194,8 @@ async def game_generator(payload: BatchRequest):
 
         async with httpx.AsyncClient() as client:
             for chunk in chunks:
-                store_resp = await fetch_steam_store_data(client, chunk)
+                # ИСПРАВЛЕНИЕ: Распаковываем кортеж (теперь получаем и данные, и флаг)
+                store_resp, is_fallback = await fetch_steam_store_data(client, chunk)
                 games_to_save = []
                 
                 for sid in chunk:
@@ -202,6 +203,7 @@ async def game_generator(payload: BatchRequest):
                     data = store_resp.get(sid_str, {})
                     known_name = names_map.get(sid, f"App {sid}")
                     
+                    # ИСПРАВЛЕНИЕ: Передаем флаг is_fallback в парсер
                     game_obj = parse_game_obj(sid, data, known_name, is_fallback)
                     games_to_save.append(game_obj)
 
