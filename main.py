@@ -102,40 +102,52 @@ async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
     target_id = app_ids[0]
     sid_str = str(target_id)
 
-    # Запрашиваем RU данные
-    data = await request_store(client, target_id, region="ru")
-    
-    # Если RU не ответил или вернул False (игра недоступна в РФ)
-    if not data or not data.get(sid_str, {}).get('success'):
-        await asyncio.sleep(0.5) # Маленькая пауза
-        # Пытаемся получить данные из США (там цены есть почти всегда)
-        data = await request_store(client, target_id, region="us")
+    async with STORE_API_LOCK:
+        # 1. Сначала пробуем RU
+        data = await request_store(client, target_id, region="ru")
+        is_fallback = False
         
-    return data if data else {}
+        # 2. Если в RU пусто или успех: False, идем в US
+        if not data or not data.get(sid_str, {}).get('success'):
+            await asyncio.sleep(1.0) # Чуть больше пауза, чтобы не злить Стим
+            data = await request_store(client, target_id, region="us")
+            is_fallback = True
+        
+        return data, is_fallback # Возвращаем данные и пометку
     
-def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
+def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool = False) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
     success = data.get('success', False)
     game_data = data.get('data', {})
 
     name = game_data.get('name', known_name)
-    # Исправляем логику: если success=True, но цены нет - значит игра бесплатная или это спец. версия
-    price_str = "В библиотеке" # По умолчанию для твоих игр
+    genres_list = [g['description'] for g in game_data.get('genres', [])]
+    genres_str = ", ".join(genres_list) if genres_list else ""
+
+    # Логика определения цены
+    price_val = "В библиотеке"
     discount = 0
 
     if success:
         if game_data.get('is_free'):
-            price_str = "Бесплатно"
+            price_val = "Бесплатно"
         elif 'price_overview' in game_data:
             p = game_data['price_overview']
-            price_str = p.get('final_formatted', "Бесплатно")
+            price_val = p.get('final_formatted', "Бесплатно")
             discount = p.get('discount_percent', 0)
     
+    # Если это fallback (данные из США), добавляем спец. маркер
+    if is_fallback and success and price_val != "В библиотеке":
+        final_price = f"LOCKED|{price_val}"
+    else:
+        final_price = price_val
+
     return Game(
         steam_id=steam_id,
         name=name,
         image_url=image_url,
-        price_str=price_str,
+        genres=genres_str,
+        price_str=final_price,
         discount_percent=discount,
         last_updated=datetime.now()
     )
@@ -190,7 +202,7 @@ async def game_generator(payload: BatchRequest):
                     data = store_resp.get(sid_str, {})
                     known_name = names_map.get(sid, f"App {sid}")
                     
-                    game_obj = parse_game_obj(sid, data, known_name)
+                    game_obj = parse_game_obj(sid, data, known_name, is_fallback)
                     games_to_save.append(game_obj)
 
                 if games_to_save:

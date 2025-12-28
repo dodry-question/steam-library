@@ -5,6 +5,40 @@
     <title>Моя Библиотека</title>
     <link rel="icon" type="image/png" href="/static/favicon.png?v=7">
     <style>
+
+        /* Стиль для текста "Недоступно в РФ" */
+.price.region-locked {
+    color: #ffb444;
+    cursor: help;
+    text-decoration: underline dotted;
+    position: relative;
+}
+
+/* Контейнер всплывающего окна */
+.price.region-locked::after {
+    content: attr(data-price); /* Берем цену из атрибута */
+    position: absolute;
+    bottom: 125%;
+    right: 0;
+    background: #171a21;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid #ffb444;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: 0.2s;
+    z-index: 100;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+}
+
+.price.region-locked:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
         body { font-family: 'Segoe UI', sans-serif; background-color: #1b2838; color: #c7d5e0; padding: 40px; margin: 0; }
         
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background-color: #171a21; padding: 15px 20px; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
@@ -226,39 +260,49 @@
         }
 
         function addCard(game) {
-            const div = document.createElement('div');
-            div.className = 'card';
-            
-            let hours = Math.round(game.playtime_forever / 60);
-            let timeStr = hours > 0 ? `${hours} ч. в игре` : "Не запускалась";
-            let discountHtml = game.discount_percent > 0 ? `<div class="discount-badge">-${game.discount_percent}%</div>` : '<div></div>';
-            
-            let priceClass = "price";
-            if (game.price_str === "Бесплатно") {
-    priceClass += " free";
-} else if (game.price_str.includes("Недоступно")) {
-    // Добавим красный цвет для недоступных
-    div.style.borderColor = "#ff444455"; // (Опционально) красная рамка
-    priceClass += " blocked"; // Можно добавить стиль в CSS
-}
+    const div = document.createElement('div');
+    div.className = 'card';
+    
+    let displayPrice = game.price_str || "";
+    let priceAttr = "";
+    let extraClass = "";
 
-            // Если картинки нет, подставляем заглушку
-            div.innerHTML = `
-                <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
-                    <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
-                    <div class="info">
-                        <h2>${game.name}</h2>
-                        <div class="genres">${game.genres || ""}</div>
-                        <div class="playtime">${timeStr}</div>
-                    </div>
-                </a>
-                <div class="price-block">
-                    ${discountHtml}
-                    <div class="${priceClass}">${game.price_str || ""}</div>
-                </div>
-            `;
-            document.getElementById('container').appendChild(div);
-        }
+    // 1. Логика для игр, недоступных в РФ (наш маркер LOCKED|)
+    if (displayPrice.startsWith("LOCKED|")) {
+        const parts = displayPrice.split("|");
+        displayPrice = "Недоступно в РФ";
+        priceAttr = `data-price="Цена в мире: ${parts[1]}"`;
+        extraClass = "region-locked";
+    } 
+    // 2. Логика для старых записей или ошибок (красная рамка)
+    else if (displayPrice.includes("Недоступно")) {
+        div.style.borderColor = "#ff444455";
+        extraClass = "blocked";
+    }
+
+    let hours = Math.round(game.playtime_forever / 60);
+    let timeStr = hours > 0 ? `${hours} ч. в игре` : "Не запускалась";
+    let discountHtml = game.discount_percent > 0 ? `<div class="discount-badge">-${game.discount_percent}%</div>` : '<div></div>';
+    
+    let priceClass = "price " + extraClass;
+    if (displayPrice === "Бесплатно") priceClass += " free";
+
+    div.innerHTML = `
+        <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
+            <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
+            <div class="info">
+                <h2>${game.name}</h2>
+                <div class="genres">${game.genres || ""}</div>
+                <div class="playtime">${timeStr}</div>
+            </div>
+        </a>
+        <div class="price-block">
+            ${discountHtml}
+            <div class="${priceClass}" ${priceAttr}>${displayPrice}</div>
+        </div>
+    `;
+    document.getElementById('container').appendChild(div);
+}
 
         function sortGames(type) {
             const container = document.getElementById('container');
