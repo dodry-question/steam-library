@@ -18,11 +18,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 # --- НАСТРОЙКИ ---
-STEAM_API_KEY = os.environ.get("STEAM_API_KEY") 
+# Загружаем и очищаем ключ от лишних пробелов и кавычек
+RAW_KEY = os.environ.get("STEAM_API_KEY") or ""
+STEAM_API_KEY = RAW_KEY.strip().replace('"', '').replace("'", "")
+
 if not STEAM_API_KEY:
-    print("❌ ОШИБКА: Ключ Steam не найден в .env!")
+    print("❌ ОШИБКА: Ключ Steam не найден!")
 else:
-    print(f"✅ Ключ загружен успешно: {STEAM_API_KEY[:5]}***") # Покажет первые 5 символов ключа
+    print(f"✅ Ключ загружен и очищен: {STEAM_API_KEY[:5]}***")
 MY_DOMAIN = os.environ.get("MY_DOMAIN", "http://localhost:8001")
 STORE_API_LOCK = asyncio.Lock()
 
