@@ -81,40 +81,37 @@ async def request_store(client, app_id, region="ru"):
     params = {
         "appids": str(app_id),
         "cc": region,
-        "l": "russian",
-        "filters": "price_overview,genres,name,is_free" # Просим только нужное
+        "l": "russian"
     }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    }
+    # Оставляем только один заголовок, самый простой
+    headers = {"User-Agent": "Mozilla/5.0"} 
 
     try:
         resp = await client.get(url, params=params, headers=headers, timeout=10.0)
         if resp.status_code == 200:
             return resp.json()
         elif resp.status_code == 429:
-            print(f"🛑 429: Слишком много запросов. Ждем 5 сек...")
-            await asyncio.sleep(5)
+            print(f"🛑 429: Блокировка за частоту. Ждем 10 секунд...")
+            await asyncio.sleep(10)
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
-    # Т.к. CHUNK_SIZE = 1, в app_ids всегда будет только один ID
     if not app_ids: return {}
     target_id = app_ids[0]
     sid_str = str(target_id)
 
-    async with STORE_API_LOCK:
-        # 1. Пробуем получить RU данные
-        data = await request_store(client, target_id, region="ru")
+    # Запрашиваем RU данные
+    data = await request_store(client, target_id, region="ru")
+    
+    # Если RU не ответил или вернул False (игра недоступна в РФ)
+    if not data or not data.get(sid_str, {}).get('success'):
+        await asyncio.sleep(0.5) # Маленькая пауза
+        # Пытаемся получить данные из США (там цены есть почти всегда)
+        data = await request_store(client, target_id, region="us")
         
-        # 2. Если RU не вернул успех, пробуем US (региональные ограничения)
-        if not data or not data.get(sid_str, {}).get('success'):
-            await asyncio.sleep(0.5) # Пауза перед вторым шансом
-            data = await request_store(client, target_id, region="us")
-        
-        return data if data else {}
+    return data if data else {}
     
 def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
@@ -122,33 +119,22 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str) -> Game:
     game_data = data.get('data', {})
 
     name = game_data.get('name', known_name)
-    genres_list = [g['description'] for g in game_data.get('genres', [])]
-    genres_str = ", ".join(genres_list) if genres_list else ""
-
-    price_str = "Недоступно"
+    # Исправляем логику: если success=True, но цены нет - значит игра бесплатная или это спец. версия
+    price_str = "В библиотеке" # По умолчанию для твоих игр
     discount = 0
 
     if success:
-        is_free = game_data.get('is_free', False)
-        if is_free:
+        if game_data.get('is_free'):
             price_str = "Бесплатно"
         elif 'price_overview' in game_data:
             p = game_data['price_overview']
+            price_str = p.get('final_formatted', "Бесплатно")
             discount = p.get('discount_percent', 0)
-            price_str = p.get('final_formatted', "")
-            
-            # Проверяем валюту, если пусто
-            if not price_str:
-                price_str = f"{p.get('final', 0) / 100} {p.get('currency', '')}"
-        else:
-            # Если цена не найдена, но успех есть - возможно, это подписка или игра без цены
-            price_str = "Смотреть в Steam"
     
     return Game(
         steam_id=steam_id,
         name=name,
         image_url=image_url,
-        genres=genres_str,
         price_str=price_str,
         discount_percent=discount,
         last_updated=datetime.now()
@@ -191,7 +177,7 @@ async def game_generator(payload: BatchRequest):
             return
 
         # Размер пачки 15 - оптимально для стабильности
-        CHUNK_SIZE = 10
+        CHUNK_SIZE = 1
         chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
 
         async with httpx.AsyncClient() as client:
