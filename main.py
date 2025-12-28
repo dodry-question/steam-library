@@ -96,6 +96,25 @@ async def request_store(client, app_id, region="ru"):
         return None
     except Exception:
         return None
+    
+async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[int]:
+    """Ищет игру в магазине Steam по названию и возвращает её AppID"""
+    search_url = "https://store.steampowered.com/api/storesearch/"
+    params = {
+        "term": name,
+        "l": "russian",
+        "cc": "ru"
+    }
+    try:
+        resp = await client.get(search_url, params=params, timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("total") > 0:
+                # Берем самый первый результат поиска
+                return data["items"][0]["id"]
+    except Exception as e:
+        print(f"❌ Ошибка поиска игры {name}: {e}")
+    return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
     # Гарантируем возврат кортежа из двух элементов (данные, флаг)
@@ -319,55 +338,56 @@ async def recommend(request: Request):
         body = await request.json()
         games = body.get("games", [])
         
-        # 1. Берем игры > 5 часов (300 мин). Ключ playtime_forever
+        # Выбираем, на основе чего рекомендовать (игры > 5 часов)
         liked_games = [g for g in games if g.get('playtime_forever', 0) > 300]
-        
-        # Fallback
         if not liked_games:
-            liked_games = sorted(games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:20]
+            liked_games = sorted(games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:15]
 
         selection = random.sample(liked_games, min(3, len(liked_games)))
-        names = ", ".join([g['name'] for g in selection])
+        names_to_ai = ", ".join([g['name'] for g in selection])
         
+        # ОБНОВЛЕННЫЙ ПРОМПТ: убрали ID
         prompt = (
-            f"User likes: {names}. Suggest 3 similar Steam games. "
-            f"STRICT FORMAT REQUIRED: ID: <appid> | Name: <name> | Reason: <short russian text>. "
-            f"IMPORTANT: Use REAL and ACCURATE Steam AppIDs. "
-            f"DO NOT write introductory text. DO NOT ask questions. JUST THE LIST."
+            f"Пользователю нравятся: {names_to_ai}. Посоветуй 3 похожие игры в Steam. "
+            f"ФОРМАТ: Name: <название> | Reason: <короткое описание на русском>. "
+            f"Не пиши вводный текст, только список."
         )
-        print(f"🤖 AI Request (Selected): {names}")
 
         async with httpx.AsyncClient() as client:
             resp = await client.post("https://text.pollinations.ai/", json={
                 "messages": [{"role": "user", "content": prompt}],
-                "model": "openai",
-                "seed": random.randint(1, 9999)
+                "model": "openai"
             }, timeout=45.0)
             
             text = resp.text
-            print(f"🤖 AI Response: {text}")
-
             recs = []
+
+            # Парсим ответ ИИ
             for line in text.split('\n'):
-                if "ID:" in line:
+                if "Name:" in line and "|" in line:
                     try:
                         parts = line.split("|")
-                        if len(parts) >= 3:
-                            app_id = int(re.search(r'\d+', parts[0]).group())
+                        game_name = parts[0].replace("Name:", "").strip()
+                        reason = parts[1].replace("Reason:", "").strip()
+
+                        # ШАГ ПОИСКА: Ищем реальный AppID по названию от ИИ
+                        real_id = await search_steam_game(client, game_name)
+
+                        if real_id:
                             recs.append({
-                                "steam_id": app_id,
-                                "name": parts[1].split(":")[1].strip(),
-                                "ai_reason": parts[2].split(":")[1].strip(),
-                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
-                                "genres": "AI Recommended",
-                                "price_str": "?",
+                                "steam_id": real_id,
+                                "name": game_name,
+                                "ai_reason": reason,
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg",
+                                "price_str": "Узнать цену", # Можно позже догрузить реальную
                                 "discount_percent": 0
                             })
-                    except: pass
+                    except: continue
+            
             return {"content": {"recommendations": recs}}
     except Exception as e:
         return {"content": {"error": str(e)}}
-
+    
 @app.get("/login")
 def login():
     params = {
