@@ -99,11 +99,11 @@
                 <a href="/logout" class="btn-logout">Выйти</a>
             </div>
             
-            <!-- Возвращен размер 42px, исправлен масштаб и четкость -->
-            <div style="width: 42px; height: 42px; border: 1px solid #66c0f4; border-radius: 4px; overflow: hidden; flex-shrink: 0; box-shadow: 0 0 5px rgba(0,0,0,0.3);">
+            <!-- Контейнер аватарки -->
+            <div style="width: 42px; height: 42px; border: 1px solid #66c0f4; border-radius: 4px; overflow: hidden; flex-shrink: 0; background: #171a21; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 8px rgba(0,0,0,0.5);">
                 <img src="{{ user_avatar }}" 
-                     style="width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; image-rendering: auto;" 
-                     onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
+                    style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;" 
+                    onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
             </div>
         </div>
     {% else %}
