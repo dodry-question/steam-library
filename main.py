@@ -450,12 +450,17 @@ def logout():
 @app.get("/")
 def index(request: Request):
     uid = request.cookies.get("user_steam_id")
+    # Добавляем "or ''", чтобы вместо None всегда была пустая строка
     uname = unquote(request.cookies.get("user_name") or "")
-    uavatar = request.cookies.get("user_avatar")
+    uavatar = request.cookies.get("user_avatar") or "" 
+    
     return templates.TemplateResponse("index.html", {
-        "request": request, "user_id": uid, "user_name": uname, "user_avatar": uavatar
+        "request": request, 
+        "user_id": uid, 
+        "user_name": uname, 
+        "user_avatar": uavatar
     })
 
-if __name__ == "__main__":
+## if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, proxy_headers=True, forwarded_allow_ips="*")
