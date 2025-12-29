@@ -204,14 +204,19 @@
                 
                 if(recs && recs.length > 0) {
                     let html = '<h3 style="color:#fff; margin:0 0 10px 0;">🤖 Рекомендации:</h3><div class="ai-gallery">';
+                    // Найдите этот блок внутри getAI() и замените его:
                     recs.forEach(r => {
                         html += `
                         <div class="card" style="animation:none; width: 300px;">
-                             <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
+                            <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
                                 <img src="${r.image_url}" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
                                 <div class="info">
                                     <h2>${r.name}</h2>
-                                    <div class="playtime" style="color: #beee11; margin-top:5px; line-height:1.4; font-size: 12px;">${r.ai_reason}</div>
+                                    <!-- НОВОЕ ПОЛЕ: На основе чего рекомендовано -->
+                                    <div style="font-size: 11px; color: #66c0f4; margin-bottom: 8px; font-weight: bold;">
+                                        ⭐ На основе: ${r.based_on}
+                                    </div>
+                                    <div class="playtime" style="color: #c7d5e0; margin-top:5px; line-height:1.4; font-size: 12px;">${r.ai_reason}</div>
                                 </div>
                             </a>
                             <div class="price-block">

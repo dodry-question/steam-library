@@ -337,21 +337,22 @@ async def recommend(request: Request):
         core_names = ", ".join([g['name'] for g in top_played])
         
         # 2. Формируем список исключений (чтобы не предлагал то, что есть)
-        owned_names = ", ".join([g['name'] for g in all_games[:50]]) # Первые 50 для краткости промпта
+        owned_names = ", ".join([g['name'] for g in all_games[:50]]) 
 
-        # 3. Улучшенный промпт по советам нейросети
+        # 3. Улучшенный промпт
         prompt = (
-            f"Ты — опытный игровой куратор. Анализируй ядро интересов игрока: {core_names}. "
-            f"Найди 3 игры в Steam, которые попадают в этот психологический профиль, ориентируясь на категорию '{mood}'. "
+            f"Ты — опытный игровой куратор. Анализируй библиотеку игрока: {core_names}. "
+            f"Найди 3 игры в Steam для категории '{mood}'. "
             f"ПРАВИЛА: "
-            f"1. Избегай очевидных хитов из топ-50 Steam (никаких GTA, Witcher, Skyrim). Ищи скрытые жемчужины. "
-            f"2. НЕ ПРЕДЛАГАЙ игры из этого списка (они уже куплены): {owned_names}. "
-            f"3. ФОРМАТ: Name: <название> | Reason: <почему подходит (2 живых предложения на русском)>. "
-            f"Не используй вводные фразы, пиши сразу список."
+            f"1. Для каждой рекомендации выбери ОДНУ конкретную игру из списка игрока ({core_names}), на основе которой ты даешь совет. "
+            f"2. Избегай очевидных хитов из топ-50 Steam. "
+            f"3. НЕ ПРЕДЛАГАЙ игры, которые уже есть: {owned_names}. "
+            f"4. ФОРМАТ ОТВЕТА (строго): "
+            f"Name: <название> | Based on: <название игры из списка игрока> | Reason: <почему подходит> "
+            f"Не пиши ничего, кроме этих строк."
         )
 
         async with httpx.AsyncClient() as client:
-            # Делаем запрос к ИИ
             resp = await client.post("https://text.pollinations.ai/", json={
                 "messages": [{"role": "system", "content": "You are a professional game curator."},
                              {"role": "user", "content": prompt}],
@@ -360,39 +361,41 @@ async def recommend(request: Request):
             }, timeout=45.0)
             
             text = resp.text
-            print(f"🤖 AI Response: {text}") # Для отладки в консоли
-            
             recs = []
+            
+            # Разбираем ответ построчно
             for line in text.split('\n'):
-                if "|" in line: # Ищем разделитель, не привязываясь к "Name:"
+                line = line.strip()
+                if "|" in line and "Based on:" in line:
                     try:
                         parts = line.split("|")
-                        # Очищаем от возможных префиксов "Name:" или "1. "
-                        g_name = parts[0].replace("Name:", "").strip()
-                        # Убираем цифры в начале (типа "1. Darkest Dungeon")
-                        g_name = re.sub(r'^\d+\.\s*', '', g_name)
+                        if len(parts) < 3: continue
                         
-                        # Очищаем причину от префикса "Reason:"
-                        reason = parts[1].replace("Reason:", "").strip()
+                        g_name = parts[0].replace("Name:", "").strip()
+                        g_name = re.sub(r'^\d+\.\s*', '', g_name) # Убираем цифры в начале
+                        
+                        based_on = parts[1].replace("Based on:", "").strip()
+                        reason = parts[2].replace("Reason:", "").strip()
 
-                        # Находим реальный ID
+                        # Ищем ID игры в Steam
                         real_id = await search_steam_game(client, g_name)
 
                         if real_id:
                             recs.append({
                                 "steam_id": real_id,
                                 "name": g_name,
+                                "based_on": based_on,
                                 "ai_reason": reason,
-                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg",
-                                "price_str": "Открыть в Steam",
-                                "discount_percent": 0
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
                             })
-                    except: continue
+                    except Exception:
+                        continue # Если одна строка битая, идем к следующей
             
             return {"content": {"recommendations": recs}}
+
     except Exception as e:
         print(f"❌ AI Error: {e}")
-        return {"content": {"error": str(e)}}
+        return {"content": {"error": str(e), "recommendations": []}}
     
 @app.get("/login")
 def login():
