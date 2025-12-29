@@ -90,36 +90,31 @@
 <body>
     
     <div class="header">
-        <h1>Моя Библиотека</h1>
-        
-        {% if user_id %}
-            <div class="user-profile">
-                <div class="user-info-col">
-                    <span class="user-name">{{ user_name }}</span>
-                    <a href="/logout" class="btn-logout">Выйти</a>
-                </div>
-                
-                <!-- Увеличенная и стилизованная аватарка -->
-                <div style="width: 64px; height: 64px; position: relative; flex-shrink: 0; margin-left: 10px;">
-                    <!-- Контейнер с рамкой и тенью -->
-                    <div style="width: 100%; height: 100%; border: 1px solid #3c3d3e; border-radius: 2px; overflow: hidden; box-shadow: 0 0 15px rgba(0,0,0,0.7);">
-                        <img src="{{ user_avatar }}" 
-                             style="width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: -webkit-optimize-contrast;" 
-                             onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
-                    </div>
-                    <!-- Синяя линия статуса "В сети" как в Steam -->
-                    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: #66c0f4; border-radius: 0 0 2px 2px; box-shadow: 0 -1px 5px rgba(102, 192, 244, 0.4);"></div>
-                </div>
+    <h1>Моя Библиотека</h1>
+    
+    {% if user_id %}
+        <div class="user-profile">
+            <div class="user-info-col">
+                <span class="user-name">{{ user_name }}</span>
+                <a href="/logout" class="btn-logout">Выйти</a>
             </div>
-        {% else %}
-            <div style="margin-left: auto;">
-                <a href="/login" class="btn-steam">
-                    <div class="steam-icon"></div>
-                    Sign in through Steam
-                </a>
+            
+            <!-- Возвращен размер 42px, исправлен масштаб и четкость -->
+            <div style="width: 42px; height: 42px; border: 1px solid #66c0f4; border-radius: 4px; overflow: hidden; flex-shrink: 0; box-shadow: 0 0 5px rgba(0,0,0,0.3);">
+                <img src="{{ user_avatar }}" 
+                     style="width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; image-rendering: auto;" 
+                     onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
             </div>
-        {% endif %}
-    </div>
+        </div>
+    {% else %}
+        <div style="margin-left: auto;">
+            <a href="/login" class="btn-steam">
+                <div class="steam-icon"></div>
+                Sign in through Steam
+            </a>
+        </div>
+    {% endif %}
+</div>
 
     <div class="controls">
         {% if user_id %}

@@ -415,11 +415,11 @@ async def auth(request: Request):
     params = request.query_params
     if "openid.identity" in params:
         sid = params["openid.identity"].split("/")[-1]
+        # 1. Сначала задаем значения по умолчанию
         user_name = "Steam User"
         user_avatar = ""
-        
-        # Запрос данных профиля
-        api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={sid}"
+
+        # 2. Потом пытаемся получить данные из API
         async with httpx.AsyncClient() as client:
             try:
                 resp = await client.get(api_url, timeout=10.0)
@@ -428,13 +428,14 @@ async def auth(request: Request):
                     if data.get('response', {}).get('players'):
                         player = data['response']['players'][0]
                         user_name = player.get('personaname', 'Steam User')
-                        # Берем аватарку покрупнее для красоты
+                        # Теперь тут всё супер: берем самое лучшее качество
                         user_avatar = player.get('avatarfull', '') or player.get('avatarmedium', '')
                 else:
                     print(f"❌ Steam API Profile Error: {resp.status_code}")
             except Exception as e:
                 print(f"❌ Auth Error: {e}")
 
+        # 3. Теперь куки установятся в любом случае (либо данные профиля, либо дефолт)
         resp = RedirectResponse("/")
         resp.set_cookie("user_steam_id", sid, max_age=2592000)
         resp.set_cookie("user_name", quote(user_name), max_age=2592000)
