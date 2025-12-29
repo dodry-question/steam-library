@@ -88,43 +88,39 @@ async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[in
     except: pass
     return None
 
-async def fetch_steam_store_data(client: httpx.AsyncClient, app_ids: List[int]):
-    if not app_ids: return {}, False
-    ids_str = ",".join(map(str, app_ids))
-    
+async def fetch_steam_store_data(client: httpx.AsyncClient, app_id: int):
     async with STORE_API_LOCK:
-        # Пытаемся получить данные
-        data = await request_store(client, ids_str, region="ru")
+        # Пытаемся получить RU регион
+        data = await request_store(client, app_id, region="ru")
+        
+        if data == "RETRY_LATER":
+            return "RETRY_LATER", False
+            
+        sid_str = str(app_id)
         is_fallback = False
         
-        # Если Steam вернул 429 (None) или пустой ответ
-        if not data:
-            return {}, False
-            
-        # Проверяем, есть ли хоть один успешный ответ в пачке
-        has_success = any(data.get(str(sid), {}).get('success') for sid in app_ids)
-        
-        if not has_success:
-            await asyncio.sleep(1.0) # Небольшая пауза перед US
-            data = await request_store(client, ids_str, region="us")
+        # Если в RU не удалось (регионлок), пробуем US
+        if not data or not data.get(sid_str, {}).get('success'):
+            await asyncio.sleep(0.5) # Маленькая пауза между попытками регионов
+            data = await request_store(client, app_id, region="us")
             is_fallback = True
-        
-        return (data if data is not None else {}), is_fallback
-
+            
+        return (data if data != "RETRY_LATER" else None), is_fallback
+    
 # Вспомогательная функция (обновите ее, чтобы принимала строку)
-async def request_store(client, ids_str, region="ru"):
+async def request_store(client, app_id, region="ru"):
     url = "https://store.steampowered.com/api/appdetails"
-    params = {"appids": ids_str, "cc": region, "l": "russian"}
+    params = {"appids": str(app_id), "cc": region, "l": "russian"}
     headers = {"User-Agent": "Mozilla/5.0"} 
 
     try:
-        resp = await client.get(url, params=params, headers=headers, timeout=15.0)
+        resp = await client.get(url, params=params, headers=headers, timeout=10.0)
         if resp.status_code == 200:
             return resp.json()
         elif resp.status_code == 429:
-            print(f"🛑 429: Блокировка. Ждем паузу...")
-            return None
-    except: return None
+            return "RETRY_LATER" # Специальный маркер для блокировки
+    except: 
+        return None
     
 def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool = False) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
@@ -179,9 +175,10 @@ async def game_generator(payload: BatchRequest):
         ids.sort(key=lambda x: playtimes.get(x, 0), reverse=True)
         
         ids_to_fetch = []
-        cutoff = datetime.now() - timedelta(hours=12) 
+        # Кэш на 24 часа для цен
+        cutoff = datetime.now() - timedelta(hours=24) 
 
-        # 1. Отдаем то, что уже есть в БД (это мгновенно)
+        # Сначала отдаем всё, что уже есть в базе
         with Session(engine) as session:
             existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
             existing_map = {g.steam_id: g for g in existing_games}
@@ -198,51 +195,44 @@ async def game_generator(payload: BatchRequest):
 
         if not ids_to_fetch: return
 
-        # 2. Загружаем недостающее пачками по 5 штук (безопаснее, чем 10)
-        CHUNK_SIZE = 5 
-        chunks = [ids_to_fetch[i:i + CHUNK_SIZE] for i in range(0, len(ids_to_fetch), CHUNK_SIZE)]
-
         async with httpx.AsyncClient() as client:
-            for chunk in chunks:
-                store_resp, is_fallback = await fetch_steam_store_data(client, chunk)
+            for i, sid in enumerate(ids_to_fetch):
+                store_resp, is_fallback = await fetch_steam_store_data(client, sid)
                 
-                # Если Store API заблокирован, мы НЕ ждем 15 секунд. 
-                # Мы создаем "пустые" объекты на основе того, что знаем из списка игр.
-                games_to_process = []
-                for sid in chunk:
-                    sid_str = str(sid)
-                    # Если данных от Steam нет, передаем пустой дикт
-                    data = store_resp.get(sid_str, {}) if store_resp else {}
-                    known_name = names_map.get(sid, f"App {sid}")
-                    
-                    game_obj = parse_game_obj(sid, data, known_name, is_fallback)
-                    games_to_process.append(game_obj)
+                # Если получили 429 - делаем большую паузу и скипаем игру (подгрузим потом)
+                if store_resp == "RETRY_LATER":
+                    print(f"🛑 Steam заблокировал запросы (429). Ждем 30 секунд...")
+                    await asyncio.sleep(30)
+                    continue 
 
-                # Сохраняем и сразу отправляем
+                # Парсим данные (если store_resp None, парсер поставит "Нет в продаже")
+                sid_str = str(sid)
+                game_data_raw = store_resp.get(sid_str, {}) if store_resp else {}
+                game_obj = parse_game_obj(sid, game_data_raw, names_map.get(sid, ""), is_fallback)
+
+                # Сохраняем и отправляем одну игру
                 with Session(engine) as session:
-                    for g in games_to_process:
-                        existing = session.exec(select(Game).where(Game.steam_id == g.steam_id)).first()
-                        if existing:
-                            # Обновляем только если получили новые данные (не "Нет в продаже")
-                            if g.price_str != "Нет в продаже" or not existing.price_str:
-                                for key, value in g.model_dump(exclude={"id", "steam_id"}).items():
-                                    setattr(existing, key, value)
-                            existing.last_updated = datetime.now()
-                            session.add(existing)
-                            d = existing.model_dump()
-                        else:
-                            session.add(g)
-                            d = g.model_dump()
-                        
-                        if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
-                        d['playtime_forever'] = playtimes.get(g.steam_id, 0)
-                        yield json.dumps(d, ensure_ascii=False) + "\n"
+                    existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
+                    if existing:
+                        # Обновляем данные, если они пришли успешно
+                        if game_data_raw.get('success'):
+                            for key, value in game_obj.model_dump(exclude={"id", "steam_id"}).items():
+                                setattr(existing, key, value)
+                        existing.last_updated = datetime.now()
+                        session.add(existing)
+                        d = existing.model_dump()
+                    else:
+                        session.add(game_obj)
+                        d = game_obj.model_dump()
+                    
+                    if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
+                    d['playtime_forever'] = playtimes.get(sid, 0)
+                    yield json.dumps(d, ensure_ascii=False) + "\n"
                     session.commit()
                 
-                # Если мы получили данные от Steam, делаем паузу, чтобы не забанили
-                # Если данных не было (бан), пауза не нужна, идем дальше к следующим
-                if store_resp:
-                    await asyncio.sleep(1.2) 
+                # ГЛАВНОЕ: Пауза между запросами. 
+                # 0.7 - 0.8 сек позволяет грузить ~80 игр в минуту без бана 429.
+                await asyncio.sleep(0.7)
 
     except Exception as e:
         print(f"❌ Generator Error: {e}")
