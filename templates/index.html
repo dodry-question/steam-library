@@ -98,11 +98,18 @@
                     <span class="user-name">{{ user_name }}</span>
                     <a href="/logout" class="btn-logout">Выйти</a>
                 </div>
-                <div style="width: 42px; height: 42px; border: 1px solid #66c0f4; border-radius: 4px; overflow: hidden; flex-shrink: 0;">
-    <img src="{{ user_avatar }}" 
-         style="width: 100%; height: 100%; object-fit: cover; display: block;" 
-         onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
-</div>
+                
+                <!-- Увеличенная и стилизованная аватарка -->
+                <div style="width: 64px; height: 64px; position: relative; flex-shrink: 0; margin-left: 10px;">
+                    <!-- Контейнер с рамкой и тенью -->
+                    <div style="width: 100%; height: 100%; border: 1px solid #3c3d3e; border-radius: 2px; overflow: hidden; box-shadow: 0 0 15px rgba(0,0,0,0.7);">
+                        <img src="{{ user_avatar }}" 
+                             style="width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: -webkit-optimize-contrast;" 
+                             onerror="this.src='https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg'">
+                    </div>
+                    <!-- Синяя линия статуса "В сети" как в Steam -->
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: #66c0f4; border-radius: 0 0 2px 2px; box-shadow: 0 -1px 5px rgba(102, 192, 244, 0.4);"></div>
+                </div>
             </div>
         {% else %}
             <div style="margin-left: auto;">
@@ -205,26 +212,26 @@
                 if(recs && recs.length > 0) {
                     let html = '<h3 style="color:#fff; margin:0 0 10px 0;">🤖 Рекомендации:</h3><div class="ai-gallery">';
                     // Найдите этот блок внутри getAI() и замените его:
-                    recs.forEach(r => {
-                        html += `
-                        <div class="card" style="animation:none; width: 300px;">
-                            <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
-                                <img src="${r.image_url}" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
-                                <div class="info">
-                                    <h2>${r.name}</h2>
-                                    <!-- НОВОЕ ПОЛЕ: На основе чего рекомендовано -->
-                                    <div style="font-size: 11px; color: #66c0f4; margin-bottom: 8px; font-weight: bold;">
-                                        ⭐ На основе: ${r.based_on}
-                                    </div>
-                                    <div class="playtime" style="color: #c7d5e0; margin-top:5px; line-height:1.4; font-size: 12px;">${r.ai_reason}</div>
+                recs.forEach(r => {
+                    html += `
+                    <div class="card" style="animation:none; width: 300px;">
+                        <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
+                            <img src="${r.image_url}" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
+                            <div class="info">
+                                <h2>${r.name}</h2>
+                                <!-- НОВОЕ ПОЛЕ: На основе чего рекомендовано -->
+                                <div style="font-size: 11px; color: #66c0f4; margin-bottom: 8px; font-weight: bold;">
+                                    ⭐ На основе: ${r.based_on}
                                 </div>
-                            </a>
-                            <div class="price-block">
-                                <div></div>
-                                <div class="price">Открыть в Steam</div>
+                                <div class="playtime" style="color: #c7d5e0; margin-top:5px; line-height:1.4; font-size: 12px;">${r.ai_reason}</div>
                             </div>
-                        </div>`;
-                    });
+                        </a>
+                        <div class="price-block">
+                            <div></div>
+                            <div class="price">Открыть в Steam</div>
+                        </div>
+                    </div>`;
+                });
                     html += '</div>';
                     block.innerHTML = html;
                 } else {
