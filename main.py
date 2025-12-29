@@ -413,34 +413,47 @@ def login():
 @app.get("/auth")
 async def auth(request: Request):
     params = request.query_params
+    
+    # Если Steam вернул ответ
     if "openid.identity" in params:
+        # Извлекаем SteamID из ссылки
         sid = params["openid.identity"].split("/")[-1]
-        # 1. Сначала задаем значения по умолчанию
+        
+        # 1. Задаем значения по умолчанию (на случай сбоя API)
         user_name = "Steam User"
-        user_avatar = ""
-
-        # 2. Потом пытаемся получить данные из API
+        user_avatar = "https://avatars.akamai.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg"
+        
+        # 2. Формируем URL для запроса профиля (ВАЖНО: api_url создается здесь)
+        api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={sid}"
+        
         async with httpx.AsyncClient() as client:
             try:
+                # 3. Делаем запрос к Steam за именем и аватаркой
                 resp = await client.get(api_url, timeout=10.0)
+                
                 if resp.status_code == 200:
                     data = resp.json()
-                    if data.get('response', {}).get('players'):
-                        player = data['response']['players'][0]
+                    players = data.get('response', {}).get('players')
+                    if players:
+                        player = players[0]
+                        # Сохраняем реальное имя
                         user_name = player.get('personaname', 'Steam User')
-                        # Теперь тут всё супер: берем самое лучшее качество
-                        user_avatar = player.get('avatarfull', '') or player.get('avatarmedium', '')
+                        # Сохраняем самую четкую аватарку
+                        user_avatar = player.get('avatarfull') or player.get('avatarmedium') or user_avatar
                 else:
-                    print(f"❌ Steam API Profile Error: {resp.status_code}")
+                    print(f"❌ Steam API Error: {resp.status_code}")
             except Exception as e:
+                # Теперь эта ошибка не вылетит из-за api_url, так как она определена выше
                 print(f"❌ Auth Error: {e}")
 
-        # 3. Теперь куки установятся в любом случае (либо данные профиля, либо дефолт)
+        # 4. Сохраняем всё в куки
         resp = RedirectResponse("/")
         resp.set_cookie("user_steam_id", sid, max_age=2592000)
         resp.set_cookie("user_name", quote(user_name), max_age=2592000)
         resp.set_cookie("user_avatar", user_avatar, max_age=2592000)
         return resp
+    
+    # Если данных нет, просто возвращаем на главную
     return RedirectResponse("/")
 
 @app.get("/logout")
