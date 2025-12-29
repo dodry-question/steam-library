@@ -166,120 +166,93 @@ async def get_games_batch(payload: BatchRequest):
     return StreamingResponse(game_generator(payload), media_type="application/x-ndjson")
 
 async def game_generator(payload: BatchRequest):
-    try:
-        ids = payload.steam_ids
-        playtimes = payload.playtimes
-        names_map = payload.game_names 
+    ids = payload.steam_ids
+    playtimes = payload.playtimes
+    names_map = payload.game_names
+    cutoff = datetime.now() - timedelta(hours=24)
+
+    # 1. Сначала отдаем ВСЁ, что есть в БД (это вылетит мгновенно)
+    with Session(engine) as session:
+        existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
+        existing_map = {g.steam_id: g for g in existing_games}
         
-        # Сортировка: сначала самые играемые
-        ids.sort(key=lambda x: playtimes.get(x, 0), reverse=True)
-        
-        ids_to_fetch = []
-        # Кэш на 24 часа для цен
-        cutoff = datetime.now() - timedelta(hours=24) 
+        needed_from_steam = []
+        for sid in ids:
+            game = existing_map.get(sid)
+            if game and game.last_updated > cutoff:
+                d = game.model_dump()
+                if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
+                d['playtime_forever'] = playtimes.get(sid, 0)
+                yield json.dumps(d, ensure_ascii=False) + "\n"
+            else:
+                needed_from_steam.append(sid)
 
-        # Сначала отдаем всё, что уже есть в базе
-        with Session(engine) as session:
-            existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
-            existing_map = {g.steam_id: g for g in existing_games}
-
-            for steam_id in ids:
-                game = existing_map.get(steam_id)
-                if game and game.last_updated > cutoff:
-                    d = game.model_dump()
-                    if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
-                    d['playtime_forever'] = playtimes.get(steam_id, 0)
-                    yield json.dumps(d, ensure_ascii=False) + "\n"
-                else:
-                    ids_to_fetch.append(steam_id)
-
-        if not ids_to_fetch: return
-
+    # 2. Если чего-то нет в базе, идем в Store API по одному
+    if needed_from_steam:
         async with httpx.AsyncClient() as client:
-            for i, sid in enumerate(ids_to_fetch):
+            for sid in needed_from_steam:
                 store_resp, is_fallback = await fetch_steam_store_data(client, sid)
                 
-                # Если получили 429 - делаем большую паузу и скипаем игру (подгрузим потом)
                 if store_resp == "RETRY_LATER":
-                    print(f"🛑 Steam заблокировал запросы (429). Ждем 30 секунд...")
-                    await asyncio.sleep(30)
-                    continue 
+                    await asyncio.sleep(20) # Steam устал, ждем
+                    continue
 
-                # Парсим данные (если store_resp None, парсер поставит "Нет в продаже")
                 sid_str = str(sid)
-                game_data_raw = store_resp.get(sid_str, {}) if store_resp else {}
-                game_obj = parse_game_obj(sid, game_data_raw, names_map.get(sid, ""), is_fallback)
+                raw_data = store_resp.get(sid_str, {}) if store_resp else {}
+                game_obj = parse_game_obj(sid, raw_data, names_map.get(sid, ""), is_fallback)
 
-                # Сохраняем и отправляем одну игру
                 with Session(engine) as session:
+                    # Сохраняем/Обновляем
                     existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
                     if existing:
-                        # Обновляем данные, если они пришли успешно
-                        if game_data_raw.get('success'):
-                            for key, value in game_obj.model_dump(exclude={"id", "steam_id"}).items():
-                                setattr(existing, key, value)
+                        if raw_data.get('success'):
+                            for k, v in game_obj.model_dump(exclude={"id", "steam_id"}).items():
+                                setattr(existing, k, v)
                         existing.last_updated = datetime.now()
                         session.add(existing)
-                        d = existing.model_dump()
+                        res = existing.model_dump()
                     else:
                         session.add(game_obj)
-                        d = game_obj.model_dump()
-                    
-                    if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
-                    d['playtime_forever'] = playtimes.get(sid, 0)
-                    yield json.dumps(d, ensure_ascii=False) + "\n"
+                        res = game_obj.model_dump()
                     session.commit()
+                    
+                    if res.get('last_updated'): res['last_updated'] = res['last_updated'].isoformat()
+                    res['playtime_forever'] = playtimes.get(sid, 0)
+                    yield json.dumps(res, ensure_ascii=False) + "\n"
                 
-                # ГЛАВНОЕ: Пауза между запросами. 
-                # 0.7 - 0.8 сек позволяет грузить ~80 игр в минуту без бана 429.
-                await asyncio.sleep(0.7)
-
-    except Exception as e:
-        print(f"❌ Generator Error: {e}")
+                await asyncio.sleep(0.8) # Пауза вежливости для Steam
 
 @app.get("/api/get-games-list")
 async def get_games_list(request: Request, user_id: Optional[str] = None):
-    target_id = None
-    if user_id:
-        target_id = await resolve_steam_id(user_id)
-    if not target_id:
-        target_id = request.cookies.get("user_steam_id")
-    
-    if not target_id:
-        return {"error": "User ID not found"}
+    # (код получения target_id оставляем)
+    target_id = await resolve_steam_id(user_id) if user_id else request.cookies.get("user_steam_id")
+    if not target_id: return {"error": "ID не найден"}
 
+    # Запрашиваем только базовый список (это быстро даже для 3000 игр)
     url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={target_id}&format=json&include_appinfo=1&include_played_free_games=1"
     
     async with httpx.AsyncClient() as client:
         try:
-            p_name = target_id
-            try:
-                user_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={target_id}"
-                u_resp = await client.get(user_url, timeout=5.0)
-                u_data = u_resp.json()
-                if 'response' in u_data and 'players' in u_data['response'] and u_data['response']['players']:
-                    p_name = u_data['response']['players'][0]['personaname']
-            except: pass 
-
             resp = await client.get(url, timeout=20.0)
-            if resp.status_code == 403: return {"error": "Steam API Key Error (403)"}
-            if resp.status_code != 200: return {"error": f"Steam API Error: {resp.status_code}"}
-
             data = resp.json()
             if "response" in data and "games" in data["response"]:
+                raw_games = data["response"]["games"]
+                # Сортируем по времени игры сразу
+                raw_games.sort(key=lambda x: x.get('playtime_forever', 0), reverse=True)
+                
                 games = []
-                for g in data["response"]["games"]:
+                for g in raw_games:
+                    appid = g["appid"]
                     games.append({
-                        "appid": g["appid"], 
-                        "name": g.get("name", f"App {g['appid']}"),
-                        "playtime_forever": g.get("playtime_forever", 0) # Исправили ключ
+                        "appid": appid,
+                        "name": g.get("name", f"App {appid}"),
+                        "playtime_forever": g.get("playtime_forever", 0)
                     })
-                return {"target_id": target_id, "target_name": p_name, "games": games}
-            else:
-                return {"error": "Профиль скрыт или игр нет"}
+                return {"games": games}
+            return {"error": "Профиль скрыт"}
         except Exception as e:
-            return {"error": f"Server Error: {str(e)}"}
-
+            return {"error": str(e)}
+        
 async def resolve_steam_id(input_str: str) -> Optional[str]:
     input_str = input_str.strip()
     if input_str.isdigit() and len(input_str) == 17: return input_str

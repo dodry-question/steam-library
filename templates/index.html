@@ -237,95 +237,137 @@
             }
         }
 
-        async function loadLibrary(isFriend = false) {
-            if (isProcessing) return;
-            isProcessing = true;
-            
-            if (!isFriend && "{{ user_id }}" === "None") {
-                alert("Сначала войдите через Steam!");
-                isProcessing = false;
-                return;
-            }
+        // --- В index.html ---
 
-            const btn = document.getElementById('btn-main');
-            if (btn) btn.disabled = true;
-            clearList();
+async function loadLibrary(isFriend = false) {
+    if (isProcessing) return;
+    isProcessing = true;
+    
+    const statusBar = document.getElementById('status-bar');
+    clearList();
+    statusBar.innerHTML = '<span class="spinner"></span> Запрашиваем список у Steam...';
 
-            const statusBar = document.getElementById('status-bar');
-            
-            try {
-                let url = '/api/get-games-list';
-                if (isFriend) {
-                    const inp = document.getElementById('friend-id').value;
-                    if(inp) url += `?user_id=${encodeURIComponent(inp)}`;
-                }
-
-                statusBar.innerHTML = '<span class="spinner"></span>Получение списка игр...';
-                
-                const listResp = await fetch(url);
-                const listData = await listResp.json();
-
-                if (listData.error) {
-                    statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка: ${listData.error}</span>`;
-                    isProcessing = false; if(btn) btn.disabled = false; return;
-                }
-
-                const gamesList = listData.games;
-                if (!gamesList || gamesList.length === 0) {
-                    statusBar.innerText = "Игр не найдено.";
-                    isProcessing = false; if(btn) btn.disabled = false; return;
-                }
-
-                statusBar.innerText = `Найдено ${gamesList.length} игр. Загружаем детали...`;
-
-                const steamIds = gamesList.map(g => g.appid);
-                const playtimes = {};
-                const gameNames = {};
-                gamesList.forEach(g => {
-                    playtimes[g.appid] = g.playtime_forever;
-                    gameNames[g.appid] = g.name; 
-                });
-
-                const batchResp = await fetch('/api/games-batch', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ steam_ids: steamIds, playtimes: playtimes, game_names: gameNames })
-                });
-
-                const reader = batchResp.body.getReader();
-                const decoder = new TextDecoder("utf-8");
-                let buffer = "";
-                let count = 0;
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split("\n");
-                    buffer = lines.pop(); 
-
-                    for (const line of lines) {
-                        if (line.trim()) {
-                            try {
-                                const game = JSON.parse(line);
-                                loadedGames.push(game);
-                                addCard(game);
-                                count++;
-                                statusBar.innerText = `Загружено: ${count} из ${gamesList.length}`;
-                            } catch (e) { console.error(e); }
-                        }
-                    }
-                }
-                statusBar.innerHTML = `✅ Библиотека загружена (${count} шт)`;
-
-            } catch (e) {
-                console.error(e);
-                statusBar.innerHTML = `<span style="color: #ff6c6c;">Ошибка соединения</span>`;
-            } finally {
-                isProcessing = false;
-                if(btn) btn.disabled = false;
-            }
+    try {
+        let url = '/api/get-games-list';
+        if (isFriend) {
+            const inp = document.getElementById('friend-id').value;
+            if(inp) url += `?user_id=${encodeURIComponent(inp)}`;
         }
+
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.games) {
+            const total = data.games.length;
+            // Сохраняем базу для ИИ (он может работать уже сейчас!)
+            loadedGames = data.games.map(g => ({
+                steam_id: g.appid,
+                name: g.name,
+                playtime_forever: g.playtime_forever,
+                image_url: `https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg`,
+                price_str: "...",
+                genres: ""
+            }));
+
+            // ШАГ 1: Мгновенная отрисовка "базы"
+            statusBar.innerText = `Найдено ${total} игр. Отрисовываем...`;
+            loadedGames.forEach(g => addCard(g)); // Рисуем сразу все картинки и названия
+
+            // ШАГ 2: Если игр много (>100), пишем предупреждение о фоновой загрузке
+            if (total > 100) {
+                statusBar.innerHTML = `✅ Список готов. <span style="color:#a4d007">Цены и жанры подгружаются в фоне...</span>`;
+            } else {
+                statusBar.innerHTML = `✅ Загружено ${total} игр.`;
+            }
+
+            // ШАГ 3: Фоновая догрузка деталей (цены, жанры, скидки)
+            startBackgroundSync(data.games);
+        }
+    } catch (e) {
+        statusBar.innerText = "Ошибка соединения";
+    } finally {
+        isProcessing = false;
+    }
+}
+
+async function startBackgroundSync(rawList) {
+    const playtimes = {};
+    const names = {};
+    const ids = rawList.map(g => {
+        playtimes[g.appid] = g.playtime_forever;
+        names[g.appid] = g.name;
+        return g.appid;
+    });
+
+    const resp = await fetch('/api/games-batch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ steam_ids: ids, playtimes: playtimes, game_names: names })
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value);
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+            if (!line.trim()) continue;
+            try {
+                const fullData = JSON.parse(line);
+                // Обновляем данные в массиве для ИИ
+                const idx = loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
+                if (idx !== -1) loadedGames[idx] = fullData;
+                
+                // Обновляем карточку на странице без перерисовки всей галереи
+                updateCardDetails(fullData);
+            } catch(e) {}
+        }
+    }
+}
+
+function updateCardDetails(game) {
+    // Ищем карточку по appid в атрибутах ссылки
+    const cardLink = document.querySelector(`.card a[href*="${game.steam_id}"]`);
+    if (!cardLink) return;
+
+    const card = cardLink.closest('.card');
+    
+    // Обновляем жанры
+    const genreEl = card.querySelector('.genres');
+    if (genreEl) genreEl.innerText = game.genres || "";
+
+    // Обновляем блок цены
+    const priceBlock = card.querySelector('.price-block');
+    let displayPrice = game.price_str || "Нет в продаже";
+    let extraClass = "";
+    let priceAttr = "";
+
+    if (displayPrice.startsWith("LOCKED|")) {
+        const parts = displayPrice.split("|");
+        displayPrice = "Недоступно в РФ";
+        priceAttr = `data-price="Цена в мире: ${parts[1]}"`;
+        extraClass = "region-locked";
+    }
+
+    let priceClass = "price " + extraClass;
+    if (displayPrice === "Бесплатно") priceClass += " free";
+
+    // Обновляем скидку если есть
+    let discountHtml = (game.discount_percent > 0 && !extraClass) 
+        ? `<div class="discount-badge">-${game.discount_percent}%</div>` 
+        : '<div></div>';
+
+    priceBlock.innerHTML = `
+        ${discountHtml}
+        <div class="${priceClass}" ${priceAttr}>${displayPrice}</div>
+    `;
+}
 
         function addCard(game) {
             const div = document.createElement('div');
