@@ -433,9 +433,9 @@ async def auth(request: Request):
                 print(f"❌ Auth Error: {e}")
 
         resp = RedirectResponse("/")
-        resp.set_cookie("user_steam_id", sid)
-        resp.set_cookie("user_name", quote(user_name))
-        resp.set_cookie("user_avatar", user_avatar)
+        resp.set_cookie("user_steam_id", sid, max_age=2592000)
+        resp.set_cookie("user_name", quote(user_name), max_age=2592000)
+        resp.set_cookie("user_avatar", user_avatar, max_age=2592000)
         return resp
     return RedirectResponse("/")
 
