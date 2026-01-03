@@ -291,6 +291,10 @@ async function loadLibrary(isFriend = false) {
 }
 
 async function startBackgroundSync(rawList) {
+    const statusBar = document.getElementById('status-bar');
+    const total = rawList.length;
+    let processedCount = 0;
+
     const playtimes = {};
     const names = {};
     const ids = rawList.map(g => {
@@ -299,52 +303,74 @@ async function startBackgroundSync(rawList) {
         return g.appid;
     });
 
-    const resp = await fetch('/api/games-batch', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ steam_ids: ids, playtimes: playtimes, game_names: names })
-    });
+    try {
+        const resp = await fetch('/api/games-batch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ steam_ids: ids, playtimes: playtimes, game_names: names })
+        });
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value);
-        let lines = buffer.split("\n");
-        buffer = lines.pop();
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
+                // ФИНАЛ: Когда поток данных полностью закрыт
+                statusBar.innerHTML = `✅ Загрузка завершена! Обработано деталей: ${processedCount} из ${total}`;
+                // Через 5 секунд можно совсем очистить статус, чтобы не мешал
+                setTimeout(() => { if(statusBar.innerText.includes('Загрузка завершена')) statusBar.innerText = ''; }, 5000);
+                break;
+            }
 
-        for (let line of lines) {
-            if (!line.trim()) continue;
-            try {
-                const fullData = JSON.parse(line);
-                // Обновляем данные в массиве для ИИ
-                const idx = loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
-                if (idx !== -1) loadedGames[idx] = fullData;
-                
-                // Обновляем карточку на странице без перерисовки всей галереи
-                updateCardDetails(fullData);
-            } catch(e) {}
+            buffer += decoder.decode(value);
+            let lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (let line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const fullData = JSON.parse(line);
+                    processedCount++;
+                    
+                    // Обновляем статус в реальном времени (опционально, чтобы видеть движение)
+                    if (total > 100 && processedCount % 5 === 0) {
+                        statusBar.innerHTML = `⚙️ Синхронизация цен... ${processedCount} / ${total}`;
+                    }
+
+                    const idx = loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
+                    if (idx !== -1) loadedGames[idx] = fullData;
+                    
+                    updateCardDetails(fullData);
+                } catch(e) { console.error("Ошибка парсинга строки:", e); }
+            }
         }
+    } catch (e) {
+        console.error("Ошибка фоновой синхронизации:", e);
+        statusBar.innerHTML = `<span style="color: #ff6c6c;">⚠️ Фоновая загрузка прервана</span>`;
     }
 }
 
+// Улучшим функцию обновления, чтобы она убирала "..." если данных нет
 function updateCardDetails(game) {
-    // Ищем карточку по appid в атрибутах ссылки
     const cardLink = document.querySelector(`.card a[href*="${game.steam_id}"]`);
     if (!cardLink) return;
 
     const card = cardLink.closest('.card');
     
-    // Обновляем жанры
+    // Жанры
     const genreEl = card.querySelector('.genres');
     if (genreEl) genreEl.innerText = game.genres || "";
 
-    // Обновляем блок цены
+    // Блок цены
     const priceBlock = card.querySelector('.price-block');
-    let displayPrice = game.price_str || "Нет в продаже";
+    let displayPrice = game.price_str;
+    
+    // Если Steam так и не отдал цену, а в базе ее нет, ставим прочерк вместо "..."
+    if (!displayPrice || displayPrice === "...") displayPrice = "—";
+
     let extraClass = "";
     let priceAttr = "";
 
@@ -358,7 +384,6 @@ function updateCardDetails(game) {
     let priceClass = "price " + extraClass;
     if (displayPrice === "Бесплатно") priceClass += " free";
 
-    // Обновляем скидку если есть
     let discountHtml = (game.discount_percent > 0 && !extraClass) 
         ? `<div class="discount-badge">-${game.discount_percent}%</div>` 
         : '<div></div>';

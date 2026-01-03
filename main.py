@@ -192,10 +192,18 @@ async def game_generator(payload: BatchRequest):
         async with httpx.AsyncClient() as client:
             for sid in needed_from_steam:
                 store_resp, is_fallback = await fetch_steam_store_data(client, sid)
-                
-                if store_resp == "RETRY_LATER":
-                    await asyncio.sleep(20) # Steam устал, ждем
-                    continue
+                store_resp, is_fallback = await fetch_steam_store_data(client, sid)
+
+                if store_resp == "RETRY_LATER" or store_resp is None:
+                    res = {
+                        "steam_id": sid,
+                        "name": names_map.get(sid, ""),
+                        "price_str": "—", 
+                        "genres": "",
+                        "discount_percent": 0
+                    }
+                    yield json.dumps(res, ensure_ascii=False) + "\n"
+                    continue 
 
                 sid_str = str(sid)
                 raw_data = store_resp.get(sid_str, {}) if store_resp else {}
