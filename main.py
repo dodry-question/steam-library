@@ -287,66 +287,66 @@ async def recommend(request: Request):
     try:
         body = await request.json()
         all_games = body.get("games", [])
-        mood = body.get("mood", "hidden gems") # Получаем настроение
+        mood = body.get("mood", "hidden gems")
         
-        # 1. Формируем "Ядро интересов" - ТОП-10 самых играемых игр
+        # 1. Ядро интересов (ТОП-10)
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
         core_names = ", ".join([g['name'] for g in top_played])
         
-        # 2. Формируем список исключений (чтобы не предлагал то, что есть)
-        owned_names = ", ".join([g['name'] for g in all_games[:50]]) 
+        # 2. ОГРАНИЧИВАЕМ список имеющихся игр (берем 100 случайных, чтобы не перегружать ИИ)
+        # Это решит проблему с "зависанием" на больших библиотеках
+        sample_size = min(len(all_games), 100)
+        owned_sample = random.sample(all_games, sample_size)
+        owned_names = ", ".join([g['name'] for g in owned_sample])
 
         # 3. Улучшенный промпт
         prompt = (
-            f"Ты — опытный игровой куратор. Анализируй библиотеку игрока: {core_names}. "
-            f"Найди 3 игры в Steam для категории '{mood}'. "
-            f"ПРАВИЛА: "
-            f"1. Для каждой рекомендации выбери ОДНУ конкретную игру из списка игрока ({core_names}), на основе которой ты даешь совет. "
-            f"2. Избегай очевидных хитов из топ-50 Steam. "
-            f"3. НЕ ПРЕДЛАГАЙ игры, которые уже есть: {owned_names}. "
-            f"4. ФОРМАТ ОТВЕТА (строго): "
-            f"Name: <название> | Based on: <название игры из списка игрока> | Reason: <почему подходит> "
-            f"Не пиши ничего, кроме этих строк."
+            f"Игрок любит: {core_names}. Найди 3 игры в Steam для настроения '{mood}'.\n"
+            f"ПРАВИЛА:\n"
+            f"- НЕ предлагай игры из этого списка: {owned_names}.\n"
+            f"- Для каждой игры выбери ОДНУ основу из: {core_names}.\n"
+            f"- ФОРМАТ: Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит (1 предложение)>\n"
+            f"Пиши ТОЛЬКО эти 3 строки."
         )
 
         async with httpx.AsyncClient() as client:
             resp = await client.post("https://text.pollinations.ai/", json={
-                "messages": [{"role": "system", "content": "You are a professional game curator."},
+                "messages": [{"role": "system", "content": "You are a professional Steam curator. Use Russian language."},
                              {"role": "user", "content": prompt}],
                 "model": "openai",
-                "seed": random.randint(1, 99999)
-            }, timeout=45.0)
+                "seed": random.randint(1, 999999)
+            }, timeout=40.0)
             
             text = resp.text
-            recs = []
+            print(f"--- DEBUG AI RESPONSE ---\n{text}\n-------------------------")
             
-            # Разбираем ответ построчно
+            recs = []
             for line in text.split('\n'):
                 line = line.strip()
-                if "|" in line and "Based on:" in line:
+                # Пытаемся найти разделитель, даже если ИИ немного ошибся в формате
+                if "|" in line:
                     try:
                         parts = line.split("|")
-                        if len(parts) < 3: continue
-                        
-                        g_name = parts[0].replace("Name:", "").strip()
-                        g_name = re.sub(r'^\d+\.\s*', '', g_name) # Убираем цифры в начале
-                        
-                        based_on = parts[1].replace("Based on:", "").strip()
-                        reason = parts[2].replace("Reason:", "").strip()
+                        if len(parts) >= 3:
+                            # Очищаем название от Name:, 1., 2. и прочего
+                            g_name = re.sub(r'^(Name:|Name|[\d\.\s]+)', '', parts[0]).strip()
+                            based_on = re.sub(r'^(Based on:|Based on|Based)', '', parts[1]).strip()
+                            reason = re.sub(r'^(Reason:|Reason)', '', parts[2]).strip()
 
-                        # Ищем ID игры в Steam
-                        real_id = await search_steam_game(client, g_name)
+                            # Ищем ID в Steam
+                            real_id = await search_steam_game(client, g_name)
 
-                        if real_id:
-                            recs.append({
-                                "steam_id": real_id,
-                                "name": g_name,
-                                "based_on": based_on,
-                                "ai_reason": reason,
-                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
-                            })
-                    except Exception:
-                        continue # Если одна строка битая, идем к следующей
+                            if real_id:
+                                recs.append({
+                                    "steam_id": real_id,
+                                    "name": g_name,
+                                    "based_on": based_on,
+                                    "ai_reason": reason,
+                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
+                                })
+                    except Exception as e:
+                        print(f"Ошибка парсинга строки: {e}")
+                        continue
             
             return {"content": {"recommendations": recs}}
 
