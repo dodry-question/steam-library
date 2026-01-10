@@ -22,6 +22,31 @@
         .steam-icon { width: 18px; height: 18px; background: url('https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg') no-repeat center/contain; }
         #copy-btn:hover { opacity: 1 !important; transform: scale(1.1); }
 
+        /* Эффект спойлера для текста */
+    .spoiler-text {
+        background-color: #000000;
+        color: transparent; /* Текст прозрачный */
+        text-shadow: 0 0 5px rgba(255,255,255,0.5); /* Размытая тень */
+        cursor: help;
+        border-radius: 3px;
+        padding: 0 4px;
+        transition: all 0.3s ease;
+        user-select: none; /* Чтобы не выделялось случайно */
+    }
+
+    .spoiler-text:hover {
+        background-color: transparent;
+        color: #66c0f4; /* Цвет текста при наведении */
+        text-shadow: none;
+    }
+
+    .based-label {
+        font-size: 11px; 
+        color: #697885; 
+        font-weight: bold;
+        margin-bottom: 2px;
+    }
+
         /* --- ПАНЕЛЬ УПРАВЛЕНИЯ --- */
         .controls { background: #101216; padding: 15px; border-radius: 4px; margin-bottom: 30px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: sticky; top: 20px; z-index: 1000; box-shadow: 0 5px 20px rgba(0,0,0,0.8); border: 1px solid #3e464e; }
         .controls-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
@@ -245,11 +270,17 @@
                             <img src="${r.image_url}" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
                             <div class="info">
                                 <h2>${r.name}</h2>
-                                <!-- НОВОЕ ПОЛЕ: На основе чего рекомендовано -->
-                                <div style="font-size: 11px; color: #66c0f4; margin-bottom: 8px; font-weight: bold;">
-                                    ⭐ На основе: ${r.based_on}
+                                
+                                
+                                <div style="margin-bottom: 8px;">
+                                    <div class="based-label">⭐ Основано на ваших играх:</div>
+                                    
+                                    <span class="spoiler-text">${r.based_on}</span>
                                 </div>
-                                <div class="playtime" style="color: #c7d5e0; margin-top:5px; line-height:1.4; font-size: 12px;">${r.ai_reason}</div>
+
+                                <div class="playtime" style="color: #c7d5e0; margin-top:5px; line-height:1.4; font-size: 12px;">
+                                    ${r.ai_reason}
+                                </div>
                             </div>
                         </a>
                         <div class="price-block">

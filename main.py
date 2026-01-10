@@ -82,13 +82,25 @@ async def on_startup():
     
 async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[int]:
     search_url = "https://store.steampowered.com/api/storesearch/"
+    # Очищаем имя от лишних символов для поиска
+    clean_name = re.sub(r'[^\w\s]', '', name).lower()
+    
     params = {"term": name, "l": "russian", "cc": "ru"}
     try:
         resp = await client.get(search_url, params=params, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("total") > 0:
-                return data["items"][0]["id"]
+                items = data["items"]
+                
+                # 1. Попытка найти ТОЧНОЕ совпадение по названию
+                for item in items:
+                    item_name_clean = re.sub(r'[^\w\s]', '', item["name"]).lower()
+                    if item_name_clean == clean_name:
+                        return item["id"]
+                
+                # 2. Если точного нет, берем первый результат (как раньше)
+                return items[0]["id"]
     except: pass
     return None
 
@@ -362,9 +374,9 @@ async def recommend(request: Request):
                                 try:
                                     parts = line.split("|")
                                     if len(parts) >= 3:
-                                        g_name = re.sub(r'^(Name:|Название:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
-                                        based_on = re.sub(r'^(Based on:|Основано на:)', '', parts[1], flags=re.I).strip()
-                                        reason = re.sub(r'^(Reason:|Причина:)', '', parts[2], flags=re.I).strip()
+                                        g_name = re.sub(r'(?i)^(Name:|Название:|Game:|[\d\.\-\s]+)', '', parts[0]).strip()
+                                        based_on = re.sub(r'(?i)^(Based on:|Based on|Based|Основано на:|Основано на|Основано|Источники:|[\-\s]+)', '', parts[1]).strip()
+                                        reason = re.sub(r'(?i)^(Reason:|Reason|Причина:|Причина|Почему:|[\-\s]+)', '', parts[2]).strip()
 
                                         real_id = await search_steam_game(client, g_name)
                                         if real_id:
