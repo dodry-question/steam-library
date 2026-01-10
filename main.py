@@ -297,8 +297,9 @@ async def recommend(request: Request):
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
         core_names = ", ".join([g['name'] for g in top_played])
         
-        # Исключаем уже купленные (случайная выборка для экономии места)
-        owned_sample = random.sample(all_games, min(len(all_games), 80))
+        # Исключаем уже купленные (случайная выборка)
+        sample_size = min(len(all_games), 80)
+        owned_sample = random.sample(all_games, sample_size)
         owned_names = ", ".join([g['name'] for g in owned_sample])
 
         prompt = (
@@ -310,26 +311,32 @@ async def recommend(request: Request):
             f"Отвечай ТОЛЬКО этими 3 строками на русском."
         )
 
-        # Вызов OpenRouter (работает без VPN)
+        # Вызов OpenRouter (Google Gemini 2.0 Flash)
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
-                    "HTTP-Referer": "http://localhost:8001", # Для статистики OpenRouter
+                    "HTTP-Referer": "http://localhost:8001",
                     "Content-Type": "application/json"
                 },
                 json={
-                    "model": "google/gemini-2.0-flash-exp:free",, # Бесплатная и очень быстрая модель
+                    "model": "google/gemini-2.0-flash-exp:free",
                     "messages": [{"role": "user", "content": prompt}]
                 },
                 timeout=30.0
             )
             
             result = resp.json()
+            
+            # Проверка на ошибки от самого API
+            if "error" in result:
+                print(f"❌ API Error: {result}")
+                return {"content": {"error": "Ошибка провайдера ИИ"}}
+                
             if "choices" not in result:
-                print(f"❌ OpenRouter Error: {result}")
-                return {"content": {"error": "Ошибка ИИ"}}
+                print(f"❌ OpenRouter Structure Error: {result}")
+                return {"content": {"error": "Неверный ответ от ИИ"}}
 
             text = result['choices'][0]['message']['content']
             print(f"--- AI RESPONSE ---\n{text}")
@@ -359,7 +366,7 @@ async def recommend(request: Request):
             return {"content": {"recommendations": recs}}
 
     except Exception as e:
-        print(f"❌ AI Error: {e}")
+        print(f"❌ AI Critical Error: {e}")
         return {"content": {"error": str(e)}}
     
 @app.get("/login")
