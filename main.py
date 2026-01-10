@@ -24,6 +24,7 @@ RAW_KEY = os.environ.get("STEAM_API_KEY") or ""
 STEAM_API_KEY = RAW_KEY.strip().replace('"', '').replace("'", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY)
+print(f"DEBUG: Groq Key loaded: {'Yes' if GROQ_API_KEY else 'No'}")
 
 if not STEAM_API_KEY:
     print("❌ ОШИБКА: Ключ Steam не найден!")
@@ -292,50 +293,59 @@ async def recommend(request: Request):
         all_games = body.get("games", [])
         mood = body.get("mood", "hidden gems")
         
-        # Подготовка данных (как и раньше, но с лимитом для скорости)
+        # Подготовка данных
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
         core_names = ", ".join([g['name'] for g in top_played])
         
-        sample_size = min(len(all_games), 100)
-        owned_sample = random.sample(all_games, sample_size)
+        # Исключаем уже купленные (случайная выборка для экономии места)
+        owned_sample = random.sample(all_games, min(len(all_games), 80))
         owned_names = ", ".join([g['name'] for g in owned_sample])
 
         prompt = (
-            f"Ты профессиональный игровой куратор. Игрок любит: {core_names}.\n"
+            f"Ты игровой эксперт. Игрок любит: {core_names}.\n"
             f"Найди 3 игры в Steam для настроения '{mood}'.\n"
             f"ПРАВИЛА:\n"
-            f"- НЕ предлагай игры из этого списка: {owned_names}.\n"
-            f"- ФОРМАТ ОТВЕТА (строго 3 строки): Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит>\n"
-            f"Пиши ТОЛЬКО на русском языке."
+            f"- НЕ предлагай: {owned_names}.\n"
+            f"- ФОРМАТ: Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит>\n"
+            f"Отвечай ТОЛЬКО этими 3 строками на русском."
         )
 
-        # САМ ВЫЗОВ GROQ (Сверхбыстрый)
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "Ты эксперт по играм в Steam. Отвечай строго по формату."},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-8b-8192", # Самая быстрая модель
-            temperature=0.7,
-        )
-        
-        text = chat_completion.choices[0].message.content
-        print(f"--- GROQ AI RESPONSE ---\n{text}")
-        
-        recs = []
+        # Вызов OpenRouter (работает без VPN)
         async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
+                    "HTTP-Referer": "http://localhost:8001", # Для статистики OpenRouter
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "google/gemini-2.0-flash-exp:free",, # Бесплатная и очень быстрая модель
+                    "messages": [{"role": "user", "content": prompt}]
+                },
+                timeout=30.0
+            )
+            
+            result = resp.json()
+            if "choices" not in result:
+                print(f"❌ OpenRouter Error: {result}")
+                return {"content": {"error": "Ошибка ИИ"}}
+
+            text = result['choices'][0]['message']['content']
+            print(f"--- AI RESPONSE ---\n{text}")
+            
+            recs = []
             for line in text.split('\n'):
                 line = line.strip()
                 if "|" in line:
                     try:
                         parts = line.split("|")
                         if len(parts) >= 3:
-                            g_name = re.sub(r'^(Название:|Name:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
-                            based_on = re.sub(r'^(Основано на:|Based on:|Based|Основано)', '', parts[1], flags=re.I).strip()
-                            reason = re.sub(r'^(Причина:|Reason:)', '', parts[2], flags=re.I).strip()
+                            g_name = re.sub(r'^(Name:|Название:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
+                            based_on = re.sub(r'^(Based on:|Основано на:)', '', parts[1], flags=re.I).strip()
+                            reason = re.sub(r'^(Reason:|Причина:)', '', parts[2], flags=re.I).strip()
 
                             real_id = await search_steam_game(client, g_name)
-
                             if real_id:
                                 recs.append({
                                     "steam_id": real_id,
@@ -346,11 +356,11 @@ async def recommend(request: Request):
                                 })
                     except: continue
             
-        return {"content": {"recommendations": recs}}
+            return {"content": {"recommendations": recs}}
 
     except Exception as e:
-        print(f"❌ Groq Error: {e}")
-        return {"content": {"error": str(e), "recommendations": []}}
+        print(f"❌ AI Error: {e}")
+        return {"content": {"error": str(e)}}
     
 @app.get("/login")
 def login():
