@@ -177,74 +177,117 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
 
 # --- API ---
 
-@app.post("/api/games-batch")
-async def get_games_batch(payload: BatchRequest):
-    return StreamingResponse(game_generator(payload), media_type="application/x-ndjson")
-
-async def game_generator(payload: BatchRequest):
-    ids = payload.steam_ids
-    playtimes = payload.playtimes
-    names_map = payload.game_names
-    cutoff = datetime.now() - timedelta(hours=24)
-
-    # 1. Сначала отдаем ВСЁ, что есть в БД (это вылетит мгновенно)
-    with Session(engine) as session:
-        existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
-        existing_map = {g.steam_id: g for g in existing_games}
+@app.post("/api/recommend")
+async def recommend(request: Request):
+    try:
+        body = await request.json()
+        all_games = body.get("games", [])
+        mood = body.get("mood", "hidden gems")
         
-        needed_from_steam = []
-        for sid in ids:
-            game = existing_map.get(sid)
-            if game and game.last_updated > cutoff:
-                d = game.model_dump()
-                if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
-                d['playtime_forever'] = playtimes.get(sid, 0)
-                yield json.dumps(d, ensure_ascii=False) + "\n"
-            else:
-                needed_from_steam.append(sid)
+        # 1. Подготовка списка любимых игр
+        top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
+        core_names = ", ".join([g['name'] for g in top_played])
+        
+        # 2. Подготовка списка исключений (чтобы не советовать то, что есть)
+        sample_size = min(len(all_games), 80)
+        owned_sample = random.sample(all_games, sample_size)
+        owned_names = ", ".join([g['name'] for g in owned_sample])
 
-    # 2. Если чего-то нет в базе, идем в Store API по одному
-    if needed_from_steam:
+        # 3. СОЗДАНИЕ ПЕРЕМЕННОЙ PROMPT (Вот этого куска не хватало)
+        prompt = (
+            f"Ты игровой эксперт. Игрок любит: {core_names}.\n"
+            f"Найди 3 игры в Steam для настроения '{mood}'.\n"
+            f"ПРАВИЛА:\n"
+            f"- НЕ предлагай: {owned_names}.\n"
+            f"- ФОРМАТ: Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит>\n"
+            f"Отвечай ТОЛЬКО этими 3 строками на русском."
+        )
+
+        # 4. Список моделей (если одна занята, пробуем другую)
+        MODELS_TO_TRY = [
+            "google/gemini-2.0-flash-exp:free",
+            "google/gemini-2.0-pro-exp:free",
+            "mistralai/mistral-7b-instruct:free",
+            "huggingfaceh4/zephyr-7b-beta:free",
+        ]
+
         async with httpx.AsyncClient() as client:
-            for sid in needed_from_steam:
-                store_resp, is_fallback = await fetch_steam_store_data(client, sid)
-                store_resp, is_fallback = await fetch_steam_store_data(client, sid)
+            last_error = ""
+            
+            for model_name in MODELS_TO_TRY:
+                # Делаем до 2 попыток на каждую модель
+                for attempt in range(2):
+                    try:
+                        print(f"🔄 Пробуем {model_name} (Попытка {attempt+1})...")
+                        
+                        resp = await client.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
+                                "HTTP-Referer": "http://localhost:8001",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": model_name,
+                                "messages": [{"role": "user", "content": prompt}]
+                            },
+                            timeout=25.0
+                        )
+                        
+                        result = resp.json()
+                        
+                        # Обработка ошибок API
+                        if "error" in result:
+                            err_msg = result['error'].get('message', 'Unknown error')
+                            print(f"⚠️ Ошибка: {err_msg}")
+                            last_error = err_msg
+                            # Если просят подождать (429), ждем 2 секунды и ретрай
+                            if "rate limit" in err_msg.lower() or result['error'].get('code') == 429:
+                                await asyncio.sleep(2)
+                                continue 
+                            break # Если ошибка другая, меняем модель сразу
+                        
+                        # Успешный ответ
+                        if "choices" in result and len(result["choices"]) > 0:
+                            text = result['choices'][0]['message']['content']
+                            print(f"✅ Успех ({model_name})!\n--- AI RESPONSE ---\n{text}")
+                            
+                            # Парсинг ответа
+                            recs = []
+                            for line in text.split('\n'):
+                                line = line.strip()
+                                if "|" in line:
+                                    try:
+                                        parts = line.split("|")
+                                        if len(parts) >= 3:
+                                            g_name = re.sub(r'^(Name:|Название:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
+                                            based_on = re.sub(r'^(Based on:|Основано на:)', '', parts[1], flags=re.I).strip()
+                                            reason = re.sub(r'^(Reason:|Причина:)', '', parts[2], flags=re.I).strip()
 
-                if store_resp == "RETRY_LATER" or store_resp is None:
-                    res = {
-                        "steam_id": sid,
-                        "name": names_map.get(sid, ""),
-                        "price_str": "—", 
-                        "genres": "",
-                        "discount_percent": 0
-                    }
-                    yield json.dumps(res, ensure_ascii=False) + "\n"
-                    continue 
+                                            real_id = await search_steam_game(client, g_name)
+                                            if real_id:
+                                                recs.append({
+                                                    "steam_id": real_id,
+                                                    "name": g_name,
+                                                    "based_on": based_on,
+                                                    "ai_reason": reason,
+                                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
+                                                })
+                                    except: continue
+                            
+                            return {"content": {"recommendations": recs}}
+                            
+                    except Exception as e:
+                        print(f"⚠️ Сбой соединения: {e}")
+                        await asyncio.sleep(1)
+                        continue
 
-                sid_str = str(sid)
-                raw_data = store_resp.get(sid_str, {}) if store_resp else {}
-                game_obj = parse_game_obj(sid, raw_data, names_map.get(sid, ""), is_fallback)
+            print("❌ Все модели недоступны.")
+            return {"content": {"error": f"Серверы перегружены. Попробуйте через минуту."}}
 
-                with Session(engine) as session:
-                    # Сохраняем/Обновляем
-                    existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
-                    if existing:
-                        if raw_data.get('success'):
-                            for k, v in game_obj.model_dump(exclude={"id", "steam_id"}).items():
-                                setattr(existing, k, v)
-                        existing.last_updated = datetime.now()
-                        session.add(existing)
-                        res = existing.model_dump()
-                    else:
-                        session.add(game_obj)
-                        res = game_obj.model_dump()
-                    session.commit()
-                    
-                    if res.get('last_updated'): res['last_updated'] = res['last_updated'].isoformat()
-                    res['playtime_forever'] = playtimes.get(sid, 0)
-                    yield json.dumps(res, ensure_ascii=False) + "\n"
-                
-                await asyncio.sleep(0.8) # Пауза вежливости для Steam
+    except Exception as e:
+        print(f"❌ Critical AI Error: {e}")
+        return {"content": {"error": str(e)}}
 
 @app.get("/api/get-games-list")
 async def get_games_list(request: Request, user_id: Optional[str] = None):
@@ -305,7 +348,7 @@ async def recommend(request: Request):
         all_games = body.get("games", [])
         mood = body.get("mood", "hidden gems")
         
-        # Подготовка данных
+        # 1. Подготовка данных
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
         core_names = ", ".join([g['name'] for g in top_played])
         
@@ -313,6 +356,7 @@ async def recommend(request: Request):
         owned_sample = random.sample(all_games, sample_size)
         owned_names = ", ".join([g['name'] for g in owned_sample])
 
+        # 2. Создание переменной prompt (ЭТОЙ ЧАСТИ НЕ ХВАТАЛО)
         prompt = (
             f"Ты игровой эксперт. Игрок любит: {core_names}.\n"
             f"Найди 3 игры в Steam для настроения '{mood}'.\n"
@@ -322,82 +366,87 @@ async def recommend(request: Request):
             f"Отвечай ТОЛЬКО этими 3 строками на русском."
         )
 
-        # СПИСОК МОДЕЛЕЙ (Если первая занята, пробуем следующую)
-        # Все они бесплатные (:free) и быстрые
+        # 3. Список моделей для перебора
         MODELS_TO_TRY = [
-            "google/gemini-2.0-flash-exp:free",            # Самая быстрая (Google)
-            "meta-llama/llama-3.2-11b-vision-instruct:free", # Новая Llama (Meta)
-            "microsoft/phi-3-medium-128k-instruct:free",   # Очень быстрая (Microsoft)
-            "huggingfaceh4/zephyr-7b-beta:free"            # Стабильная резервная
+            "google/gemini-2.0-flash-exp:free",
+            "google/gemini-2.0-pro-exp:free",
+            "mistralai/mistral-7b-instruct:free",
+            "huggingfaceh4/zephyr-7b-beta:free",
         ]
 
         async with httpx.AsyncClient() as client:
             last_error = ""
             
-            # Цикл перебора моделей
             for model_name in MODELS_TO_TRY:
-                try:
-                    print(f"🔄 Пробуем модель: {model_name}...")
-                    resp = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
-                            "HTTP-Referer": "http://localhost:8001",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": model_name,
-                            "messages": [{"role": "user", "content": prompt}]
-                        },
-                        timeout=25.0
-                    )
-                    
-                    result = resp.json()
-                    
-                    # Если ошибка API (например 429 или 404), идем к следующей модели
-                    if "error" in result:
-                        err_msg = result['error'].get('message', 'Unknown error')
-                        print(f"⚠️ Ошибка модели {model_name}: {err_msg}")
-                        last_error = err_msg
-                        continue 
-                    
-                    # Если всё ок — берем текст и выходим из цикла
-                    if "choices" in result and len(result["choices"]) > 0:
-                        text = result['choices'][0]['message']['content']
-                        print(f"✅ Успех ({model_name})!\n--- AI RESPONSE ---\n{text}")
+                # Делаем до 2 попыток на каждую модель
+                for attempt in range(2):
+                    try:
+                        print(f"🔄 Пробуем {model_name} (Попытка {attempt+1})...")
                         
-                        # Парсинг ответа
-                        recs = []
-                        for line in text.split('\n'):
-                            line = line.strip()
-                            if "|" in line:
-                                try:
-                                    parts = line.split("|")
-                                    if len(parts) >= 3:
-                                        g_name = re.sub(r'(?i)^(Name:|Название:|Game:|[\d\.\-\s]+)', '', parts[0]).strip()
-                                        based_on = re.sub(r'(?i)^(Based on:|Based on|Based|Основано на:|Основано на|Основано|Источники:|[\-\s]+)', '', parts[1]).strip()
-                                        reason = re.sub(r'(?i)^(Reason:|Reason|Причина:|Причина|Почему:|[\-\s]+)', '', parts[2]).strip()
+                        resp = await client.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
+                                "HTTP-Referer": "http://localhost:8001",
+                                "Content-Type": "application/json"
+                            },
+                            json={
+                                "model": model_name,
+                                "messages": [{"role": "user", "content": prompt}]
+                            },
+                            timeout=25.0
+                        )
+                        
+                        result = resp.json()
+                        
+                        # Обработка ошибок API
+                        if "error" in result:
+                            err_msg = result['error'].get('message', 'Unknown error')
+                            print(f"⚠️ Ошибка: {err_msg}")
+                            last_error = err_msg
+                            # Если просят подождать (429), ждем и пробуем еще раз
+                            if "rate limit" in err_msg.lower() or result['error'].get('code') == 429:
+                                await asyncio.sleep(2)
+                                continue 
+                            break # Если ошибка другая, меняем модель сразу
+                        
+                        # Успешный ответ
+                        if "choices" in result and len(result["choices"]) > 0:
+                            text = result['choices'][0]['message']['content']
+                            print(f"✅ Успех ({model_name})!\n--- AI RESPONSE ---\n{text}")
+                            
+                            # Парсинг ответа
+                            recs = []
+                            for line in text.split('\n'):
+                                line = line.strip()
+                                if "|" in line:
+                                    try:
+                                        parts = line.split("|")
+                                        if len(parts) >= 3:
+                                            g_name = re.sub(r'^(Name:|Название:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
+                                            based_on = re.sub(r'^(Based on:|Основано на:)', '', parts[1], flags=re.I).strip()
+                                            reason = re.sub(r'^(Reason:|Причина:)', '', parts[2], flags=re.I).strip()
 
-                                        real_id = await search_steam_game(client, g_name)
-                                        if real_id:
-                                            recs.append({
-                                                "steam_id": real_id,
-                                                "name": g_name,
-                                                "based_on": based_on,
-                                                "ai_reason": reason,
-                                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
-                                            })
-                                except: continue
-                        
-                        return {"content": {"recommendations": recs}}
-                        
-                except Exception as e:
-                    print(f"⚠️ Сбой соединения с {model_name}: {e}")
-                    continue
+                                            real_id = await search_steam_game(client, g_name)
+                                            if real_id:
+                                                recs.append({
+                                                    "steam_id": real_id,
+                                                    "name": g_name,
+                                                    "based_on": based_on,
+                                                    "ai_reason": reason,
+                                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
+                                                })
+                                    except: continue
+                            
+                            return {"content": {"recommendations": recs}}
+                            
+                    except Exception as e:
+                        print(f"⚠️ Сбой соединения: {e}")
+                        await asyncio.sleep(1)
+                        continue
 
-            # Если ни одна модель не сработала
             print("❌ Все модели недоступны.")
-            return {"content": {"error": f"Все серверы ИИ заняты. Последняя ошибка: {last_error}"}}
+            return {"content": {"error": f"Серверы перегружены. Попробуйте через минуту."}}
 
     except Exception as e:
         print(f"❌ Critical AI Error: {e}")

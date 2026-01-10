@@ -22,30 +22,59 @@
         .steam-icon { width: 18px; height: 18px; background: url('https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg') no-repeat center/contain; }
         #copy-btn:hover { opacity: 1 !important; transform: scale(1.1); }
 
-        /* Эффект спойлера для текста */
-    .spoiler-text {
-        background-color: #000000;
-        color: transparent; /* Текст прозрачный */
-        text-shadow: 0 0 5px rgba(255,255,255,0.5); /* Размытая тень */
-        cursor: help;
-        border-radius: 3px;
-        padding: 0 4px;
-        transition: all 0.3s ease;
-        user-select: none; /* Чтобы не выделялось случайно */
-    }
+        /* --- Тултип для звёздочки --- */
+.star-tooltip {
+    position: relative;
+    cursor: help;
+    display: inline-block;
+    font-size: 14px;
+    margin-right: 5px;
+}
 
-    .spoiler-text:hover {
-        background-color: transparent;
-        color: #66c0f4; /* Цвет текста при наведении */
-        text-shadow: none;
-    }
+/* Само всплывающее окно */
+.star-tooltip::after {
+    content: attr(data-games); /* Берет текст из атрибута */
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #171a21;
+    color: #66c0f4;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #66c0f4;
+    font-size: 12px;
+    white-space: nowrap; /* Текст в одну строку */
+    opacity: 0;
+    visibility: hidden;
+    transition: 0.2s;
+    pointer-events: none;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.8);
+    z-index: 100;
+    font-weight: normal;
+}
 
-    .based-label {
-        font-size: 11px; 
-        color: #697885; 
-        font-weight: bold;
-        margin-bottom: 2px;
-    }
+/* Стрелочка вниз у тултипа */
+.star-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 85%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #66c0f4 transparent transparent transparent;
+    opacity: 0;
+    visibility: hidden;
+    transition: 0.2s;
+}
+
+.star-tooltip:hover::after,
+.star-tooltip:hover::before {
+    opacity: 1;
+    visibility: visible;
+    bottom: 115%; /* Небольшая анимация подъема */
+}
 
         /* --- ПАНЕЛЬ УПРАВЛЕНИЯ --- */
         .controls { background: #101216; padding: 15px; border-radius: 4px; margin-bottom: 30px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: sticky; top: 20px; z-index: 1000; box-shadow: 0 5px 20px rgba(0,0,0,0.8); border: 1px solid #3e464e; }
@@ -271,14 +300,13 @@
                             <div class="info">
                                 <h2>${r.name}</h2>
                                 
-                                
-                                <div style="margin-bottom: 8px;">
-                                    <div class="based-label">⭐ Основано на ваших играх:</div>
-                                    
-                                    <span class="spoiler-text">${r.based_on}</span>
+                                <!-- Новая конструкция: Звездочка с тултипом -->
+                                <div style="margin-bottom: 6px; display: flex; align-items: center;">
+                                    <span class="star-tooltip" data-games="Основано на: ${r.based_on}">⭐</span>
+                                    <span style="font-size: 11px; color: #697885;">Наведите, чтобы узнать причину</span>
                                 </div>
 
-                                <div class="playtime" style="color: #c7d5e0; margin-top:5px; line-height:1.4; font-size: 12px;">
+                                <div class="playtime" style="color: #c7d5e0; margin-top:2px; line-height:1.4; font-size: 12px;">
                                     ${r.ai_reason}
                                 </div>
                             </div>
