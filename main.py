@@ -79,10 +79,10 @@ async def on_startup():
     create_db_and_tables()
 
 # --- Вспомогательные функции ---
-    
+
 async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[int]:
     search_url = "https://store.steampowered.com/api/storesearch/"
-    # Очищаем имя от лишних символов для поиска
+    # Очищаем имя от лишних символов для поиска (оставляем только буквы и цифры)
     clean_name = re.sub(r'[^\w\s]', '', name).lower()
     
     params = {"term": name, "l": "russian", "cc": "ru"}
@@ -99,31 +99,11 @@ async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[in
                     if item_name_clean == clean_name:
                         return item["id"]
                 
-                # 2. Если точного нет, берем первый результат (как раньше)
+                # 2. Если точного нет, берем первый результат
                 return items[0]["id"]
     except: pass
     return None
 
-async def fetch_steam_store_data(client: httpx.AsyncClient, app_id: int):
-    async with STORE_API_LOCK:
-        # Пытаемся получить RU регион
-        data = await request_store(client, app_id, region="ru")
-        
-        if data == "RETRY_LATER":
-            return "RETRY_LATER", False
-            
-        sid_str = str(app_id)
-        is_fallback = False
-        
-        # Если в RU не удалось (регионлок), пробуем US
-        if not data or not data.get(sid_str, {}).get('success'):
-            await asyncio.sleep(0.5) # Маленькая пауза между попытками регионов
-            data = await request_store(client, app_id, region="us")
-            is_fallback = True
-            
-        return (data if data != "RETRY_LATER" else None), is_fallback
-    
-# Вспомогательная функция (обновите ее, чтобы принимала строку)
 async def request_store(client, app_id, region="ru"):
     url = "https://store.steampowered.com/api/appdetails"
     params = {"appids": str(app_id), "cc": region, "l": "russian"}
@@ -137,7 +117,26 @@ async def request_store(client, app_id, region="ru"):
             return "RETRY_LATER" # Специальный маркер для блокировки
     except: 
         return None
-    
+
+async def fetch_steam_store_data(client: httpx.AsyncClient, app_id: int):
+    async with STORE_API_LOCK:
+        # Пытаемся получить RU регион
+        data = await request_store(client, app_id, region="ru")
+        
+        if data == "RETRY_LATER":
+            return "RETRY_LATER", False
+            
+        sid_str = str(app_id)
+        is_fallback = False
+        
+        # Если в RU не удалось (регионлок или просто нет данных), пробуем US
+        if not data or not data.get(sid_str, {}).get('success'):
+            await asyncio.sleep(0.5) # Маленькая пауза между попытками регионов
+            data = await request_store(client, app_id, region="us")
+            is_fallback = True
+            
+        return (data if data != "RETRY_LATER" else None), is_fallback
+
 def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool = False) -> Game:
     image_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_id}/header.jpg"
     success = data.get('success', False)
@@ -174,6 +173,80 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
         discount_percent=discount,
         last_updated=datetime.now()
     )
+
+# --- ГЕНЕРАТОР (Который у вас отсутствовал) ---
+
+async def game_generator(payload: BatchRequest):
+    ids = payload.steam_ids
+    playtimes = payload.playtimes
+    names_map = payload.game_names
+    # Считаем данные устаревшими через 24 часа
+    cutoff = datetime.now() - timedelta(hours=24)
+
+    # 1. Сначала отдаем ВСЁ, что есть в БД (это происходит мгновенно)
+    with Session(engine) as session:
+        existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
+        existing_map = {g.steam_id: g for g in existing_games}
+        
+        needed_from_steam = []
+        for sid in ids:
+            game = existing_map.get(sid)
+            # Если игра есть в базе и обновлялась недавно — отдаем сразу
+            if game and game.last_updated > cutoff:
+                d = game.model_dump()
+                if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
+                d['playtime_forever'] = playtimes.get(sid, 0)
+                yield json.dumps(d, ensure_ascii=False) + "\n"
+            else:
+                needed_from_steam.append(sid)
+
+    # 2. Если чего-то нет в базе, идем в Store API по одной игре
+    if needed_from_steam:
+        async with httpx.AsyncClient() as client:
+            for sid in needed_from_steam:
+                store_resp, is_fallback = await fetch_steam_store_data(client, sid)
+                
+                # Если Steam заблокировал запросы (429)
+                if store_resp == "RETRY_LATER":
+                    # Делаем паузу и отдаем "пустышку", чтобы фронтенд не висел вечно
+                    # (пользователь увидит игру, но без цены)
+                    await asyncio.sleep(20) 
+                    yield json.dumps({
+                        "steam_id": sid,
+                        "name": names_map.get(sid, ""),
+                        "price_str": "—",
+                        "genres": "",
+                        "discount_percent": 0
+                    }, ensure_ascii=False) + "\n"
+                    continue
+
+                sid_str = str(sid)
+                raw_data = store_resp.get(sid_str, {}) if store_resp else {}
+                
+                # Парсим полученные данные
+                game_obj = parse_game_obj(sid, raw_data, names_map.get(sid, ""), is_fallback)
+
+                # Сохраняем в базу
+                with Session(engine) as session:
+                    existing = session.exec(select(Game).where(Game.steam_id == sid)).first()
+                    if existing:
+                        if raw_data.get('success'):
+                            for k, v in game_obj.model_dump(exclude={"id", "steam_id"}).items():
+                                setattr(existing, k, v)
+                        existing.last_updated = datetime.now()
+                        session.add(existing)
+                        res = existing.model_dump()
+                    else:
+                        session.add(game_obj)
+                        res = game_obj.model_dump()
+                    session.commit()
+                    
+                    if res.get('last_updated'): res['last_updated'] = res['last_updated'].isoformat()
+                    res['playtime_forever'] = playtimes.get(sid, 0)
+                    yield json.dumps(res, ensure_ascii=False) + "\n"
+                
+                # Пауза вежливости для Steam (чтобы не словить бан)
+                await asyncio.sleep(0.8)
 
 # --- API ---
 
