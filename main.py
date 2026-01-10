@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from urllib.parse import quote, unquote
 
+from groq import Groq
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -21,6 +22,8 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 # Загружаем и очищаем ключ от лишних пробелов и кавычек
 RAW_KEY = os.environ.get("STEAM_API_KEY") or ""
 STEAM_API_KEY = RAW_KEY.strip().replace('"', '').replace("'", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 if not STEAM_API_KEY:
     print("❌ ОШИБКА: Ключ Steam не найден!")
@@ -289,51 +292,48 @@ async def recommend(request: Request):
         all_games = body.get("games", [])
         mood = body.get("mood", "hidden gems")
         
-        # 1. Ядро интересов (ТОП-10)
+        # Подготовка данных (как и раньше, но с лимитом для скорости)
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
         core_names = ", ".join([g['name'] for g in top_played])
         
-        # 2. ОГРАНИЧИВАЕМ список имеющихся игр (берем 100 случайных, чтобы не перегружать ИИ)
-        # Это решит проблему с "зависанием" на больших библиотеках
         sample_size = min(len(all_games), 100)
         owned_sample = random.sample(all_games, sample_size)
         owned_names = ", ".join([g['name'] for g in owned_sample])
 
-        # 3. Улучшенный промпт
         prompt = (
-            f"Игрок любит: {core_names}. Найди 3 игры в Steam для настроения '{mood}'.\n"
+            f"Ты профессиональный игровой куратор. Игрок любит: {core_names}.\n"
+            f"Найди 3 игры в Steam для настроения '{mood}'.\n"
             f"ПРАВИЛА:\n"
             f"- НЕ предлагай игры из этого списка: {owned_names}.\n"
-            f"- Для каждой игры выбери ОДНУ основу из: {core_names}.\n"
-            f"- ФОРМАТ: Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит (1 предложение)>\n"
-            f"Пиши ТОЛЬКО эти 3 строки."
+            f"- ФОРМАТ ОТВЕТА (строго 3 строки): Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит>\n"
+            f"Пиши ТОЛЬКО на русском языке."
         )
 
+        # САМ ВЫЗОВ GROQ (Сверхбыстрый)
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "Ты эксперт по играм в Steam. Отвечай строго по формату."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-8b-8192", # Самая быстрая модель
+            temperature=0.7,
+        )
+        
+        text = chat_completion.choices[0].message.content
+        print(f"--- GROQ AI RESPONSE ---\n{text}")
+        
+        recs = []
         async with httpx.AsyncClient() as client:
-            resp = await client.post("https://text.pollinations.ai/", json={
-                "messages": [{"role": "system", "content": "You are a professional Steam curator. Use Russian language."},
-                             {"role": "user", "content": prompt}],
-                "model": "openai",
-                "seed": random.randint(1, 999999)
-            }, timeout=40.0)
-            
-            text = resp.text
-            print(f"--- DEBUG AI RESPONSE ---\n{text}\n-------------------------")
-            
-            recs = []
             for line in text.split('\n'):
                 line = line.strip()
-                # Пытаемся найти разделитель, даже если ИИ немного ошибся в формате
                 if "|" in line:
                     try:
                         parts = line.split("|")
                         if len(parts) >= 3:
-                            # Очищаем название от Name:, 1., 2. и прочего
-                            g_name = re.sub(r'^(Name:|Name|[\d\.\s]+)', '', parts[0]).strip()
-                            based_on = re.sub(r'^(Based on:|Based on|Based)', '', parts[1]).strip()
-                            reason = re.sub(r'^(Reason:|Reason)', '', parts[2]).strip()
+                            g_name = re.sub(r'^(Название:|Name:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
+                            based_on = re.sub(r'^(Основано на:|Based on:|Based|Основано)', '', parts[1], flags=re.I).strip()
+                            reason = re.sub(r'^(Причина:|Reason:)', '', parts[2], flags=re.I).strip()
 
-                            # Ищем ID в Steam
                             real_id = await search_steam_game(client, g_name)
 
                             if real_id:
@@ -344,14 +344,12 @@ async def recommend(request: Request):
                                     "ai_reason": reason,
                                     "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
                                 })
-                    except Exception as e:
-                        print(f"Ошибка парсинга строки: {e}")
-                        continue
+                    except: continue
             
-            return {"content": {"recommendations": recs}}
+        return {"content": {"recommendations": recs}}
 
     except Exception as e:
-        print(f"❌ AI Error: {e}")
+        print(f"❌ Groq Error: {e}")
         return {"content": {"error": str(e), "recommendations": []}}
     
 @app.get("/login")
