@@ -3,7 +3,9 @@ uvicorn
 sqlmodel
 httpx
 jinja2
+python-dotenv
 python-multipart
 g4f
 curl_cffi
 duckai
+groq
