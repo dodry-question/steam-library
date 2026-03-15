@@ -98,6 +98,12 @@
             animation: fadeIn 0.4s ease-out; display: flex; flex-direction: column; 
             transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
         }
+        /* Отключаем перетаскивание ссылок и картинок мышкой */
+        .card a, .card img {
+            -webkit-user-drag: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         .card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.5); border-color: #66c0f4; z-index: 10; }
         
@@ -240,10 +246,6 @@
         </div>
 
         <!-- ПРАВАЯ ЧАСТЬ -->
-        <div class="controls-right">
-            <button onclick="toggleSelectionMode()" id="btn-select-mode" class="btn-toggle-select">
-                <span>🎯</span> Выбрать для ИИ
-            </button>
             
             <div class="mood-container">
                 <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
@@ -419,39 +421,42 @@ function setupCardHold(cardElement, gameName) {
     link.addEventListener('touchend', cancelPress);
 }
 
-function toggleGameSelection(gameName, cardElement) {
-    if (selectedGames.has(gameName)) {
-        selectedGames.delete(gameName);
-        cardElement.classList.remove('selected');
-    } else {
-        selectedGames.add(gameName);
-        cardElement.classList.add('selected');
-    }
-
-    // Если убрали выделение со всех - выходим из режима
-    if (selectedGames.size === 0) {
-        isSelectionMode = false;
-    }
-
-    updateAiButtonState();
-}
-
 function updateAiButtonState() {
-    const aiBtn = document.getElementById('main-ai-btn'); // Кнопка в панели
+    const aiBtn = document.getElementById('main-ai-btn'); // Кнопка в шапке
     const selectedCount = document.getElementById('selected-count'); // Счетчик
+    const actionPanel = document.getElementById('ai-action-panel'); // Выезжающая панель
     
     if (selectedCount) {
         selectedCount.innerText = selectedGames.size;
     }
 
+    // Если есть выделенные игры - показываем панель и блокируем переходы
     if (selectedGames.size > 0) {
+        isSelectionMode = true;
+        actionPanel.style.display = 'flex';
         aiBtn.innerHTML = `🚀 Искать похожее (${selectedGames.size})`;
         aiBtn.classList.add('active-selection');
+        document.querySelectorAll('.card').forEach(c => c.classList.add('selectable'));
     } else {
+        // Если игр не осталось - прячем панель
+        isSelectionMode = false;
+        actionPanel.style.display = 'none';
         aiBtn.innerHTML = `✨ AI Совет`;
         aiBtn.classList.remove('active-selection');
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('selectable'));
     }
 }
+
+function clearSelection() {
+    selectedGames.clear();
+    isSelectionMode = false;
+    document.getElementById('ai-action-panel').style.display = 'none'; // Прячем панель
+    document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.card.selectable').forEach(c => c.classList.remove('selectable'));
+    updateAiButtonState();
+}
+
+// Функцию toggleSelectionMode() (которую мы добавляли ранее) можно просто УДАЛИТЬ из кода, она больше не нужна.
 
 // Отмена выделения после запроса к ИИ
 function clearSelection() {
