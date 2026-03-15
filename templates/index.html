@@ -140,6 +140,28 @@
         #status-bar { margin-bottom: 20px; color: #66c0f4; font-size: 14px; font-weight: bold; min-height: 20px; }
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #66c0f4; border-top-color: transparent; border-radius: 50%; animation: spin 1s infinite; margin-right: 8px; vertical-align: text-bottom; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        /* --- НОВЫЙ ПОИСКОВИК --- */
+        .search-container { display: flex; align-items: center; max-width: 400px; width: 100%; margin: 0 20px; flex-grow: 1; }
+        .search-input { width: 100%; padding: 10px 15px; border-radius: 4px 0 0 4px; border: 1px solid #3e464e; background: #1b2128; color: white; outline: none; transition: 0.2s; font-family: inherit; }
+        .search-input:focus { border-color: #66c0f4; box-shadow: inset 0 0 5px rgba(102, 192, 244, 0.2); }
+        .search-btn { padding: 10px 16px; border-radius: 0 4px 4px 0; background: #2a3f5a; border: 1px solid #2a3f5a; color: white; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
+        .search-btn:hover { background: #66c0f4; border-color: #66c0f4; color: #1b2838; }
+
+        /* --- РЕЖИМ ВЫДЕЛЕНИЯ ИГР ДЛЯ ИИ --- */
+        .btn-toggle-select { background-color: #171a21; color: #b829e3; border: 1px solid #b829e3; display: flex; align-items: center; gap: 8px; }
+        .btn-toggle-select:hover { background-color: #b829e3; color: white; }
+        .btn-toggle-select.active { background-color: #b829e3; color: white; animation: pulse 2s infinite; }
+
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(184, 41, 227, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(184, 41, 227, 0); } 100% { box-shadow: 0 0 0 0 rgba(184, 41, 227, 0); } }
+
+        /* Изменения карточки при выделении */
+        .card.selectable { cursor: pointer; transition: 0.2s; }
+        .card.selectable a { pointer-events: none; } /* Отключаем переход в Steam в режиме выбора */
+        .card.selected { border: 2px solid #b829e3; box-shadow: 0 0 20px rgba(184, 41, 227, 0.5); transform: translateY(-5px); }
+        .card.selected::before { content: '✓'; position: absolute; top: 10px; right: 10px; background: #b829e3; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 20; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+
+        /* Панель подтверждения ИИ */
+        #ai-action-panel { display: none; background: #121418; border: 1px solid #b829e3; border-left: 5px solid #b829e3; padding: 15px 20px; margin-bottom: 25px; border-radius: 4px; align-items: center; justify-content: space-between; box-shadow: 0 10px 20px rgba(0,0,0,0.5); animation: fadeIn 0.3s ease-out; position: sticky; top: 90px; z-index: 999; }
     </style>
 </head>
 <body>
@@ -177,39 +199,68 @@
     {% endif %}
 </div>
 
-    <div class="controls">
+    <div class="controls" style="justify-content: space-between;">
+    
+    <!-- ЛЕВАЯ ЧАСТЬ: Библиотека и фильтры -->
+    <div style="display: flex; gap: 10px; align-items: center;">
         {% if user_id %}
             <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
         {% endif %}
-        <button onclick="clearList()" class="btn-clear">Очистить</button>
+        <button onclick="clearList()" class="btn-clear" title="Очистить экран">🗑️</button>
         <span style="color: #454d58;">|</span>
         <button onclick="sortGames('playtime')" class="btn-sort">По времени</button>
         <button onclick="sortGames('price')" class="btn-sort">По цене</button>
+    </div>
 
-        <div class="controls-right">
-            <input type="text" id="search-input" class="input-friend" placeholder="🔍 Поиск по играм..." oninput="filterGames()" style="margin-right: 15px; width: 150px;">
-                <div class="mood-container">
-                    <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
-                        <span id="current-mood-emoji">💎</span>
-                        <span class="arrow">▼</span>
-                    </div>
-                    <div class="mood-menu" id="mood-menu">
-                        <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
-                        <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
-                        <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
-                        <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
-                        <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
-                    </div>
-                </div>
+    <!-- ЦЕНТР: Новый поиск -->
+    <div class="search-container">
+        <input type="text" id="search-input" class="search-input" placeholder="Найти игру в библиотеке...">
+        <button onclick="executeSearch()" class="search-btn" title="Искать">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+    </div>
 
-            <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
-            
-            <div style="display: flex;">
-                <input type="text" id="friend-id" class="input-friend" placeholder="ID друга / Ссылка">
-                <button onclick="loadLibrary(true)" class="btn-friend">Найти</button>
+    <!-- ПРАВАЯ ЧАСТЬ: ИИ и Друзья -->
+    <div class="controls-right" style="margin-left: 0;">
+        <!-- НОВАЯ КНОПКА: Режим выделения -->
+        <button onclick="toggleSelectionMode()" id="btn-select-mode" class="btn-toggle-select">
+            <span>🎯</span> Выбрать для ИИ
+        </button>
+        
+        <div class="mood-container">
+            <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
+                <span id="current-mood-emoji">💎</span><span class="arrow">▼</span>
+            </div>
+            <!-- Меню настроения скрыто для экономии места, у тебя оно уже есть в коде -->
+            <div class="mood-menu" id="mood-menu">
+                <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
+                <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
+                <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
+                <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
+                <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
             </div>
         </div>
+
+        <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
+        
+        <div style="display: flex;">
+            <input type="text" id="friend-id" class="input-friend" placeholder="ID друга" style="width: 100px;">
+            <button onclick="loadLibrary(true)" class="btn-friend">Найти</button>
+        </div>
     </div>
+</div>
+
+<!-- НОВАЯ ПАНЕЛЬ ДЛЯ ОТПРАВКИ ВЫБРАННЫХ ИГР В ИИ -->
+<div id="ai-action-panel">
+    <div style="line-height: 1.4;">
+        <div style="color: #fff; font-size: 16px; font-weight: bold;">Игры выбраны: <span id="ai-selection-count" style="color: #b829e3;">0</span></div>
+        <div id="ai-selection-names" style="color: #697885; font-size: 12px; max-width: 600px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <button onclick="toggleSelectionMode()" class="btn-clear">Отмена</button>
+        <button onclick="getAIForSelected()" class="btn-ai" style="padding: 10px 20px; font-size: 15px;">🚀 Найти похожее</button>
+    </div>
+</div>
 
     <div id="ai-block"></div>
     <div id="status-bar"></div>
@@ -518,7 +569,7 @@ function updateCardDetails(game) {
             if (displayPrice === "Бесплатно") priceClass += " free";
 
             div.innerHTML = `
-                <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
+                <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" onclick="handleCardClick(event, '${game.name.replace(/'/g, "\\'")}')" style="text-decoration:none; color:inherit; flex-grow:1;">
                     <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
                     <div class="info">
                         <h2>${game.name}</h2>
@@ -555,22 +606,151 @@ function updateCardDetails(game) {
             });
             loadedGames.forEach(addCard);
         }
-        
-        // --- ФУНКЦИЯ ПОИСКА ---
-        function filterGames() {
-            const query = document.getElementById('search-input').value.toLowerCase();
-            const cards = document.querySelectorAll('.card'); // Берем все карточки на странице
-            
-            cards.forEach(card => {
-                // Ищем название игры внутри тега h2
-                const name = card.querySelector('h2').innerText.toLowerCase();
-                if (name.includes(query)) {
-                    card.style.display = 'flex'; // Показываем, если есть совпадение
-                } else {
-                    card.style.display = 'none'; // Прячем, если нет
-                }
+
+                    /* --- ЛОГИКА НОВОГО ПОИСКА --- */
+            const searchInput = document.getElementById('search-input');
+
+            // Поиск по нажатию Enter
+            searchInput.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') executeSearch();
             });
-        }
+
+            // Живой поиск при стирании текста (чтобы вернуть все игры, если строка пустая)
+            searchInput.addEventListener('input', function() {
+                if(this.value === '') executeSearch();
+            });
+
+            function executeSearch() {
+                const query = searchInput.value.toLowerCase().trim();
+                const cards = document.querySelectorAll('.card');
+                cards.forEach(card => {
+                    const name = card.querySelector('h2').innerText.toLowerCase();
+                    card.style.display = name.includes(query) ? 'flex' : 'none';
+                });
+            }
+
+            /* --- ЛОГИКА ВЫДЕЛЕНИЯ КАРТОЧЕК --- */
+            let isSelectionMode = false;
+            let selectedGames = new Set(); // Хранит уникальные имена выбранных игр
+
+            function toggleSelectionMode() {
+                if (loadedGames.length === 0) return alert("Сначала загрузите библиотеку!");
+                
+                isSelectionMode = !isSelectionMode;
+                const btn = document.getElementById('btn-select-mode');
+                const panel = document.getElementById('ai-action-panel');
+                const cards = document.querySelectorAll('.card');
+
+                if (isSelectionMode) {
+                    // Включаем режим
+                    btn.classList.add('active');
+                    btn.innerHTML = "<span>❌</span> Завершить выбор";
+                    cards.forEach(c => c.classList.add('selectable'));
+                    updateSelectionPanel();
+                } else {
+                    // Выключаем режим
+                    btn.classList.remove('active');
+                    btn.innerHTML = "<span>🎯</span> Выбрать для ИИ";
+                    cards.forEach(c => {
+                        c.classList.remove('selectable', 'selected');
+                    });
+                    selectedGames.clear();
+                    panel.style.display = 'none';
+                }
+            }
+
+            // Функция клика по карточке (добавим ее вызов в саму карточку ниже)
+            function handleCardClick(event, gameName) {
+                if (!isSelectionMode) return; // Если режим выключен, работает стандартный клик (переход в Steam)
+                
+                event.preventDefault(); // Запрещаем переход по ссылке
+                
+                const card = event.currentTarget.closest('.card');
+                
+                // Добавляем или убираем игру из выбранных
+                if (selectedGames.has(gameName)) {
+                    selectedGames.delete(gameName);
+                    card.classList.remove('selected');
+                } else {
+                    selectedGames.add(gameName);
+                    card.classList.add('selected');
+                }
+                updateSelectionPanel();
+            }
+
+            function updateSelectionPanel() {
+                const panel = document.getElementById('ai-action-panel');
+                const countText = document.getElementById('ai-selection-count');
+                const namesText = document.getElementById('ai-selection-names');
+                
+                if (selectedGames.size > 0) {
+                    panel.style.display = 'flex';
+                    countText.innerText = selectedGames.size;
+                    namesText.innerText = Array.from(selectedGames).join(', ');
+                } else {
+                    panel.style.display = 'none';
+                }
+            }
+
+            // Отправка выбранных игр в ИИ
+            async function getAIForSelected() {
+                if (selectedGames.size === 0) return;
+                
+                const targetGamesArray = Array.from(selectedGames);
+                const gamesListText = targetGamesArray.join(', ');
+                
+                // Выключаем режим выделения
+                toggleSelectionMode(); 
+                
+                // Скроллим наверх
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
+                const block = document.getElementById('ai-block');
+                block.style.display = 'block';
+                block.innerHTML = `<span class="spinner"></span> ИИ подбирает игры, похожие на: <b>${gamesListText}</b>...`;
+                
+                try {
+                    const resp = await fetch('/api/recommend-selected', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ 
+                            games: loadedGames, 
+                            target_games: targetGamesArray,
+                            mood: currentMood 
+                        })
+                    });
+                    const data = await resp.json();
+                    const recs = data.content.recommendations;
+                    
+                    if(recs && recs.length > 0) {
+                        let html = `<h3 style="color:#fff; margin:0 0 10px 0;">✨ На основе вашего выбора:</h3><div class="ai-gallery">`;
+                        recs.forEach(r => {
+                            html += `
+                            <div class="card" style="animation:none; width: 300px;">
+                                <a href="https://store.steampowered.com/app/${r.steam_id}" target="_blank" style="text-decoration:none; color:inherit; flex-grow:1;">
+                                    <img src="${r.image_url}" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
+                                    <div class="info">
+                                        <h2>${r.name}</h2>
+                                        <div style="margin-bottom: 6px; display: flex; align-items: center;">
+                                            <span class="star-tooltip" data-games="Похоже на: ${r.based_on}">⭐</span>
+                                            <span style="font-size: 11px; color: #697885;">Наведите, чтобы узнать основу</span>
+                                        </div>
+                                        <div class="playtime" style="color: #c7d5e0; margin-top:2px; line-height:1.4; font-size: 12px;">
+                                            ${r.ai_reason}
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>`;
+                        });
+                        html += '</div>';
+                        block.innerHTML = html;
+                    } else {
+                        block.innerHTML = 'ИИ не нашел ничего подходящего.';
+                    }
+                } catch(e) {
+                    block.innerHTML = 'Ошибка соединения с AI.';
+                }
+            }
     </script>
 </body>
 </html>

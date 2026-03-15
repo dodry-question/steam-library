@@ -361,6 +361,81 @@ async def recommend(request: Request):
         print(f"❌ Критическая ошибка ИИ: {e}")
         return {"content": {"error": str(e)}}
 
+@app.post("/api/recommend-selected")
+async def recommend_selected(request: Request):
+    try:
+        body = await request.json()
+        all_games = body.get("games", [])
+        target_games = body.get("target_games", [])
+        mood = body.get("mood", "hidden gems")
+        
+        if not target_games:
+            return {"content": {"error": "Игры не выбраны"}}
+            
+        targets_str = ", ".join(target_games)
+        
+        # Исключения: берем побольше игр из библиотеки, чтобы ИИ их не советовал
+        exclusions = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:350]
+        owned_names = ", ".join([g['name'] for g in exclusions])
+
+        # Специальный промпт для списка игр
+        prompt = f"""
+Ты игровой эксперт. Игрок выбрал эти игры из своей библиотеки: {targets_str}.
+Посоветуй ровно 3 игры в Steam, которые максимально похожи на этот набор игр (по геймплею, атмосфере, жанру), учитывая настроение: '{mood}'.
+СТРОГИЕ ПРАВИЛА:
+1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.
+2. Ответ СТРОГО в формате JSON-массива, без Markdown, без лишних слов.
+Формат ответа:
+[
+  {{"name": "Название игры", "based_on": "На какую из выбранных игр она больше всего похожа", "reason": "Кратко на русском, почему она подойдет этому игроку (смешанная механика, похожий сеттинг и т.д.)"}}
+]
+"""
+        API_BASE_URL = os.environ.get("VSEGPT_BASE_URL", "https://api.vsegpt.ru/v1/chat/completions")
+        API_KEY = os.environ.get("VSEGPT_API_KEY")
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                API_BASE_URL,
+                headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.6 # Чуть пониже температура для большей точности
+                },
+                timeout=40.0
+            )
+            
+            result = resp.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                raw_text = result['choices'][0]['message']['content'].strip()
+                clean_text = re.sub(r"^```json", "", raw_text, flags=re.MULTILINE)
+                clean_text = re.sub(r"^```", "", clean_text, flags=re.MULTILINE).strip()
+                
+                try:
+                    ai_recommendations = json.loads(clean_text)
+                    recs = []
+                    for item in ai_recommendations:
+                        g_name = item.get("name", "")
+                        based_on = item.get("based_on", "")
+                        reason = item.get("reason", "")
+                        real_id = await search_steam_game(client, g_name)
+                        if real_id:
+                            recs.append({
+                                "steam_id": real_id,
+                                "name": g_name,
+                                "based_on": based_on,
+                                "ai_reason": reason,
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
+                            })
+                    if recs: return {"content": {"recommendations": recs}}
+                except Exception as e:
+                    print(f"Ошибка парсинга: {e}")
+                    
+            return {"content": {"error": "Не удалось получить список похожих игр."}}
+
+    except Exception as e:
+        return {"content": {"error": str(e)}}
+
 @app.get("/api/get-games-list")
 async def get_games_list(request: Request, user_id: Optional[str] = None):
     # (код получения target_id оставляем)
