@@ -129,9 +129,18 @@
         }
         .price.region-locked:hover::after { opacity: 1; visibility: visible; }
 
-        /* --- БЛОК ИИ И МЕНЮ НАСТРОЕНИЯ --- */
-        #ai-block { display: none; background: #121418; border: 1px solid #6b2cf5; padding: 20px; margin-bottom: 30px; border-radius: 4px; }
-        #ai-block .ai-gallery { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; margin-top: 15px; }
+        /* --- ЕДИНАЯ ПАНЕЛЬ ИИ --- */
+        #ai-block { 
+            display: none; background: #121418; border: 1px solid #b829e3; 
+            padding: 20px; margin-bottom: 25px; border-radius: 4px; 
+            border-left: 5px solid #b829e3; box-shadow: 0 10px 20px rgba(0,0,0,0.5); 
+            animation: fadeIn 0.3s ease-out; 
+        }
+        /* Спец. класс когда мы выбираем игры (делает панель узкой и плавающей) */
+        #ai-block.selection-mode { 
+            display: flex !important; align-items: center; justify-content: space-between; 
+            padding: 15px 20px; position: sticky; top: 90px; z-index: 999; 
+        }
 
         .mood-container { position: relative; display: inline-block; vertical-align: middle; }
         .mood-trigger { background: #2a2d33; border: 1px solid #3e464e; color: white; padding: 8px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; font-size: 18px; }
@@ -183,8 +192,6 @@
         .card.selected { border: 2px solid #b829e3; box-shadow: 0 0 20px rgba(184, 41, 227, 0.5); transform: translateY(-5px); }
         .card.selected::before { content: '✓'; position: absolute; top: 10px; right: 10px; background: #b829e3; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 20; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
 
-        /* Панель подтверждения ИИ */
-        #ai-action-panel { display: none; background: #121418; border: 1px solid #b829e3; border-left: 5px solid #b829e3; padding: 15px 20px; margin-bottom: 25px; border-radius: 4px; align-items: center; justify-content: space-between; box-shadow: 0 10px 20px rgba(0,0,0,0.5); animation: fadeIn 0.3s ease-out; position: sticky; top: 90px; z-index: 999; }
         /* --- ДИНАМИЧЕСКАЯ КНОПКА ИИ --- */
         .btn-ai { background: linear-gradient(45deg, #6b2cf5, #b829e3); font-weight: bold; transition: 0.3s; }
         .btn-ai.active-selection { background: linear-gradient(45deg, #ff007a, #b829e3); animation: pulse-ai 2s infinite; padding: 8px 20px; font-size: 14px; }
@@ -269,13 +276,7 @@
     </div>
 
     <!-- ПАНЕЛЬ ПОДТВЕРЖДЕНИЯ ИИ (появляется при выборе) -->
-    <div id="ai-action-panel">
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <span style="color: white; font-weight: bold;">Игры выбраны: <span id="selected-count" style="color: #b829e3; font-size: 18px;">0</span></span>
-            <button onclick="clearSelection()" style="background: transparent; border: 1px solid #697885; color: #aaa; border-radius: 4px; padding: 5px 10px; cursor: pointer;">Отмена</button>
-        </div>
-        <button id="panel-ai-btn" onclick="getAI()" class="btn-ai active-selection" style="font-size: 14px;">✨ Найти похожее</button>
-    </div>
+    
 
     <div id="ai-block"></div>
     <div id="status-bar"></div>
