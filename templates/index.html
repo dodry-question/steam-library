@@ -379,20 +379,31 @@ function setupCardHold(cardElement, gameName) {
     const link = cardElement.querySelector('a');
     let isLongPressFired = false; // Предохранитель от двойного срабатывания
 
-    // Обработка клика
+    // Обработка клика (Обычного и с SHIFT)
     link.addEventListener('click', (e) => {
+        // НОВОЕ: Если зажат SHIFT
+        if (e.shiftKey) {
+            e.preventDefault(); // Блокируем переход в Steam
+            document.getSelection().removeAllRanges(); // Сбрасываем случайное выделение синим текстом
+            
+            if (!isSelectionMode) {
+                isSelectionMode = true;
+            }
+            toggleGameSelection(gameName, cardElement);
+            return; // Завершаем выполнение, чтобы обычный клик не сработал
+        }
+
+        // Если режим выбора УЖЕ включен (кликаем без шифта, чтобы добавить другие игры)
         if (isSelectionMode) {
             e.preventDefault(); // Блокируем Steam
             
-            // Если мы только что закончили долгое нажатие, ничего не делаем (игра уже выделилась)
-            // Иначе (это был быстрый обычный клик в режиме выбора) - выделяем/снимаем выделение
             if (!isLongPressFired) {
                 toggleGameSelection(gameName, cardElement);
             }
         }
     });
 
-    // Обработка долгого зажатия (мышь и сенсор)
+    // Обработка долгого зажатия (мышь и сенсор) — остается как было
     const startPress = (e) => {
         if (e.type === 'mousedown' && e.button !== 0) return; // Только левая кнопка
         isLongPressFired = false; // Сбрасываем предохранитель
