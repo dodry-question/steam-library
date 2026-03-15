@@ -416,12 +416,17 @@ async def add_game_manual(steam_id: int = Form(...)):
 
     
 @app.get("/login")
-def login():
+async def login(request: Request): # Обязательно добавляем (request: Request)
+    # Код сам определяет, запущен он на localhost или в Amvera (https)
+    scheme = request.headers.get("x-forwarded-proto", "http")
+    host = request.headers.get("host")
+    current_domain = f"{scheme}://{host}"
+    
     params = {
         "openid.ns": "http://specs.openid.net/auth/2.0",
         "openid.mode": "checkid_setup",
-        "openid.return_to": f"{MY_DOMAIN}/auth",
-        "openid.realm": f"{MY_DOMAIN}",
+        "openid.return_to": f"{current_domain}/auth", # Используем динамический домен
+        "openid.realm": f"{current_domain}",          # Используем динамический домен
         "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
         "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
     }
