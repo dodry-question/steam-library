@@ -232,9 +232,9 @@
     </div>
 
     <!-- ПАНЕЛЬ УПРАВЛЕНИЯ -->
-    <div class="controls" style="justify-content: space-between;">
+    <div class="controls" style="display: flex; justify-content: space-between; align-items: center;">
         
-        <!-- ЛЕВАЯ ЧАСТЬ (которая пропала) -->
+        <!-- ЛЕВАЯ ЧАСТЬ -->
         <div style="display: flex; gap: 10px; align-items: center;">
             {% if user_id %}
                 <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
@@ -246,7 +246,7 @@
         </div>
 
         <!-- ПРАВАЯ ЧАСТЬ -->
-            
+        <div style="display: flex; gap: 10px; align-items: center;">
             <div class="mood-container">
                 <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
                     <span id="current-mood-emoji">💎</span><span class="arrow">▼</span>
@@ -351,85 +351,80 @@ function liveSearch() {
     });
 }
 
-/* --- СИСТЕМА ДОЛГОГО НАЖАТИЯ И ВЫДЕЛЕНИЯ --- */
+/* --- СИСТЕМА ДОЛГОГО НАЖАТИЯ И ВЫДЕЛЕНИЯ (SHIFT / УДЕРЖАНИЕ) --- */
 let isSelectionMode = false;
 let selectedGames = new Set();
 let pressTimer;
 
-// НОВАЯ ФУНКЦИЯ ДЛЯ КНОПКИ "Выбрать для ИИ"
-function toggleSelectionMode() {
-    isSelectionMode = !isSelectionMode;
-    const btnMode = document.getElementById('btn-select-mode');
-    const actionPanel = document.getElementById('ai-action-panel');
-
-    if (isSelectionMode) {
-        btnMode.classList.add('active');
-        actionPanel.style.display = 'flex'; // Показываем панель внизу
-        document.querySelectorAll('.card').forEach(c => c.classList.add('selectable'));
-    } else {
-        btnMode.classList.remove('active');
-        actionPanel.style.display = 'none'; // Прячем панель
-        document.querySelectorAll('.card').forEach(c => c.classList.remove('selectable'));
-        clearSelection();
-    }
-}
-
-// Эту функцию мы привяжем к карточкам при их создании
 function setupCardHold(cardElement, gameName) {
     const link = cardElement.querySelector('a');
-    let isLongPressFired = false; // Предохранитель от двойного срабатывания
+    let isLongPressFired = false;
 
-    // Обработка клика (Обычного и с SHIFT)
+    // Обработка клика
     link.addEventListener('click', (e) => {
-        // НОВОЕ: Если зажат SHIFT
+        // Если зажат Shift
         if (e.shiftKey) {
-            e.preventDefault(); // Блокируем переход в Steam
-            document.getSelection().removeAllRanges(); // Сбрасываем случайное выделение синим текстом
+            e.preventDefault(); // Блокируем Стим
+            document.getSelection().removeAllRanges(); // Сбрасываем синее выделение текста
             
-            if (!isSelectionMode) {
-                isSelectionMode = true;
-            }
+            isSelectionMode = true;
             toggleGameSelection(gameName, cardElement);
-            return; // Завершаем выполнение, чтобы обычный клик не сработал
+            return; // Выходим из функции
         }
 
-        // Если режим выбора УЖЕ включен (кликаем без шифта, чтобы добавить другие игры)
+        // Если режим выбора УЖЕ включен (добавляем игры простыми кликами)
         if (isSelectionMode) {
-            e.preventDefault(); // Блокируем Steam
-            
+            e.preventDefault(); // Блокируем Стим
             if (!isLongPressFired) {
                 toggleGameSelection(gameName, cardElement);
             }
         }
+        // Если ничего не зажато и режим выключен — сработает стандартный переход в Steam!
     });
 
-    // Обработка долгого зажатия (мышь и сенсор) — остается как было
+    // Обработка долгого зажатия мыши или пальца
     const startPress = (e) => {
-        if (e.type === 'mousedown' && e.button !== 0) return; // Только левая кнопка
-        isLongPressFired = false; // Сбрасываем предохранитель
+        if (e.type === 'mousedown' && e.button !== 0) return; // Только левая кнопка мыши
+        isLongPressFired = false;
         
         pressTimer = setTimeout(() => {
-            isLongPressFired = true; // Записываем, что долгое нажатие случилось
+            isLongPressFired = true;
+            isSelectionMode = true;
             
-            if (!isSelectionMode) {
-                isSelectionMode = true;
-            }
-            
-            // Выделяем игру, только если она еще не выделена
             if (!selectedGames.has(gameName)) {
                 toggleGameSelection(gameName, cardElement);
             }
-            
+            document.getSelection().removeAllRanges(); // Сбрасываем выделение текста
         }, 500); // 500 мс удержания для активации
     };
 
     const cancelPress = () => clearTimeout(pressTimer);
 
+    // Вешаем слушатели
     link.addEventListener('mousedown', startPress);
     link.addEventListener('touchstart', startPress);
     link.addEventListener('mouseup', cancelPress);
     link.addEventListener('mouseleave', cancelPress);
     link.addEventListener('touchend', cancelPress);
+    
+    // Запрещаем браузеру пытаться "тащить" карточку мышкой
+    link.addEventListener('dragstart', (e) => e.preventDefault());
+}
+
+function toggleGameSelection(gameName, cardElement) {
+    if (selectedGames.has(gameName)) {
+        selectedGames.delete(gameName);
+        cardElement.classList.remove('selected');
+    } else {
+        selectedGames.add(gameName);
+        cardElement.classList.add('selected');
+    }
+
+    if (selectedGames.size === 0) {
+        isSelectionMode = false;
+    }
+
+    updateAiButtonState(); // Вызывает появление/скрытие панели
 }
 
 function updateAiButtonState() {
@@ -734,8 +729,8 @@ function updateCardDetails(game) {
             if (displayPrice === "Бесплатно") priceClass += " free";
 
             div.innerHTML = `
-                <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" onclick="handleCardClick(event, '${game.name.replace(/'/g, "\\'")}')" style="text-decoration:none; color:inherit; flex-grow:1;">
-                    <img src="${game.image_url}" loading="lazy" onerror="this.src='https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
+                <a href="https://store.steampowered.com/app/${game.steam_id}" target="_blank" draggable="false" style="text-decoration:none; color:inherit; flex-grow:1;">
+                    <img src="${game.image_url}" loading="lazy" draggable="false" 'https://via.placeholder.com/280x130/171a21/c7d5e0?text=No+Image'">
                     <div class="info">
                         <h2>${game.name}</h2>
                         <div class="genres">${game.genres || ""}</div>
