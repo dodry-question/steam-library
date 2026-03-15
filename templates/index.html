@@ -187,19 +187,20 @@
         <button onclick="sortGames('price')" class="btn-sort">По цене</button>
 
         <div class="controls-right">
-            <div class="mood-container">
-                <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
-                    <span id="current-mood-emoji">💎</span>
-                    <span class="arrow">▼</span>
+            <input type="text" id="search-input" class="input-friend" placeholder="🔍 Поиск по играм..." oninput="filterGames()" style="margin-right: 15px; width: 150px;">
+                <div class="mood-container">
+                    <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
+                        <span id="current-mood-emoji">💎</span>
+                        <span class="arrow">▼</span>
+                    </div>
+                    <div class="mood-menu" id="mood-menu">
+                        <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
+                        <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
+                        <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
+                        <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
+                        <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
+                    </div>
                 </div>
-                <div class="mood-menu" id="mood-menu">
-                    <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
-                    <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
-                    <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
-                    <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
-                    <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
-                </div>
-            </div>
 
             <button onclick="getAI()" class="btn-ai">✨ AI Совет</button>
             
@@ -553,6 +554,22 @@ function updateCardDetails(game) {
                 }
             });
             loadedGames.forEach(addCard);
+        }
+        
+        // --- ФУНКЦИЯ ПОИСКА ---
+        function filterGames() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const cards = document.querySelectorAll('.card'); // Берем все карточки на странице
+            
+            cards.forEach(card => {
+                // Ищем название игры внутри тега h2
+                const name = card.querySelector('h2').innerText.toLowerCase();
+                if (name.includes(query)) {
+                    card.style.display = 'flex'; // Показываем, если есть совпадение
+                } else {
+                    card.style.display = 'none'; // Прячем, если нет
+                }
+            });
         }
     </script>
 </body>
