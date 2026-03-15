@@ -367,7 +367,7 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
     target_id = await resolve_steam_id(user_id) if user_id else request.cookies.get("user_steam_id")
     if not target_id: return {"error": "ID не найден"}
 
-    # Запрашиваем только базовый список (это быстро даже для 3000 игр)
+    # Запрашиваем только базовый список
     url = f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key={STEAM_API_KEY}&steamid={target_id}&format=json&include_appinfo=1&include_played_free_games=1"
     
     async with httpx.AsyncClient() as client:
@@ -413,116 +413,7 @@ async def add_game_manual(steam_id: int = Form(...)):
     return {"error": "Не удалось загрузить"}
 
 # --- ИИ ---
-@app.post("/api/recommend")
-async def recommend(request: Request):
-    try:
-        body = await request.json()
-        all_games = body.get("games", [])
-        mood = body.get("mood", "hidden gems")
-        
-        # 1. Подготовка данных
-        top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:10]
-        core_names = ", ".join([g['name'] for g in top_played])
-        
-        sample_size = min(len(all_games), 80)
-        owned_sample = random.sample(all_games, sample_size)
-        owned_names = ", ".join([g['name'] for g in owned_sample])
 
-        # 2. Создание переменной prompt (ЭТОЙ ЧАСТИ НЕ ХВАТАЛО)
-        prompt = (
-            f"Ты игровой эксперт. Игрок любит: {core_names}.\n"
-            f"Найди 3 игры в Steam для настроения '{mood}'.\n"
-            f"ПРАВИЛА:\n"
-            f"- НЕ предлагай: {owned_names}.\n"
-            f"- ФОРМАТ: Name: <название> | Based on: <игра из списка выше> | Reason: <почему подходит>\n"
-            f"Отвечай ТОЛЬКО этими 3 строками на русском."
-        )
-
-        # 3. Список моделей для перебора
-        MODELS_TO_TRY = [
-            "google/gemini-2.0-flash-exp:free",
-            "google/gemini-2.0-pro-exp:free",
-            "mistralai/mistral-7b-instruct:free",
-            "huggingfaceh4/zephyr-7b-beta:free",
-        ]
-
-        async with httpx.AsyncClient() as client:
-            last_error = ""
-            
-            for model_name in MODELS_TO_TRY:
-                # Делаем до 2 попыток на каждую модель
-                for attempt in range(2):
-                    try:
-                        print(f"🔄 Пробуем {model_name} (Попытка {attempt+1})...")
-                        
-                        resp = await client.post(
-                            "https://openrouter.ai/api/v1/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
-                                "HTTP-Referer": "http://localhost:8001",
-                                "Content-Type": "application/json"
-                            },
-                            json={
-                                "model": model_name,
-                                "messages": [{"role": "user", "content": prompt}]
-                            },
-                            timeout=25.0
-                        )
-                        
-                        result = resp.json()
-                        
-                        # Обработка ошибок API
-                        if "error" in result:
-                            err_msg = result['error'].get('message', 'Unknown error')
-                            print(f"⚠️ Ошибка: {err_msg}")
-                            last_error = err_msg
-                            # Если просят подождать (429), ждем и пробуем еще раз
-                            if "rate limit" in err_msg.lower() or result['error'].get('code') == 429:
-                                await asyncio.sleep(2)
-                                continue 
-                            break # Если ошибка другая, меняем модель сразу
-                        
-                        # Успешный ответ
-                        if "choices" in result and len(result["choices"]) > 0:
-                            text = result['choices'][0]['message']['content']
-                            print(f"✅ Успех ({model_name})!\n--- AI RESPONSE ---\n{text}")
-                            
-                            # Парсинг ответа
-                            recs = []
-                            for line in text.split('\n'):
-                                line = line.strip()
-                                if "|" in line:
-                                    try:
-                                        parts = line.split("|")
-                                        if len(parts) >= 3:
-                                            g_name = re.sub(r'^(Name:|Название:|[\d\.\s]+)', '', parts[0], flags=re.I).strip()
-                                            based_on = re.sub(r'^(Based on:|Основано на:)', '', parts[1], flags=re.I).strip()
-                                            reason = re.sub(r'^(Reason:|Причина:)', '', parts[2], flags=re.I).strip()
-
-                                            real_id = await search_steam_game(client, g_name)
-                                            if real_id:
-                                                recs.append({
-                                                    "steam_id": real_id,
-                                                    "name": g_name,
-                                                    "based_on": based_on,
-                                                    "ai_reason": reason,
-                                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
-                                                })
-                                    except: continue
-                            
-                            return {"content": {"recommendations": recs}}
-                            
-                    except Exception as e:
-                        print(f"⚠️ Сбой соединения: {e}")
-                        await asyncio.sleep(1)
-                        continue
-
-            print("❌ Все модели недоступны.")
-            return {"content": {"error": f"Серверы перегружены. Попробуйте через минуту."}}
-
-    except Exception as e:
-        print(f"❌ Critical AI Error: {e}")
-        return {"content": {"error": str(e)}}
     
 @app.get("/login")
 def login():
@@ -608,4 +499,3 @@ def index(request: Request):
 ## if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, proxy_headers=True, forwarded_allow_ips="*")
-    
