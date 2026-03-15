@@ -8,4 +8,3 @@ python-multipart
 g4f
 curl_cffi
 duckai
-groq
