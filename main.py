@@ -261,103 +261,104 @@ async def recommend(request: Request):
         all_games = body.get("games", [])
         mood = body.get("mood", "hidden gems")
         
-        # 1. Топ игр для анализа вкусов
+        # 1. Подготовка данных: любимые игры (для основы)
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:15]
         core_names = ", ".join([g['name'] for g in top_played])
         
-        # 2. ИСКЛЮЧЕНИЯ: Берем НЕ случайные, а топ-300 игр по времени игры + последние добавленные
-        # Это гарантирует, что ИИ будет знать про всё, во что вы играли
-        sorted_by_time = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)
-        exclusions = sorted_by_time[:300] 
+        # 2. Исключения: игры, которые уже есть (берем топ 300, чтобы не советовал их)
+        exclusions = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:300]
         owned_names = ", ".join([g['name'] for g in exclusions])
 
-        # 3. Промпт
-        prompt = (
-            f"Ты игровой эксперт. Игрок любит: {core_names}.\n"
-            f"Посоветуй 3 игры в Steam для настроения '{mood}'.\n"
-            f"СТРОГИЕ ПРАВИЛА:\n"
-            f"1. ЗАПРЕЩЕНО советовать игры из этого списка: {owned_names}.\n"
-            f"2. ФОРМАТ ОТВЕТА (строго 3 строки):\n"
-            f"<Название игры> | <Игра-основа> | <Причина на русском>\n"
-            f"3. НЕ пиши слова 'Name:', 'Based on:', 'Reason:', просто пиши значения."
-        )
+        # 3. Промпт с жестким требованием вернуть JSON
+        prompt = f"""
+Ты игровой эксперт. Игрок любит эти игры: {core_names}.
+Посоветуй ровно 3 игры в Steam, которые подойдут под настроение: '{mood}'.
+СТРОГИЕ ПРАВИЛА:
+1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.
+2. Твой ответ должен быть СТРОГО в формате валидного JSON-массива, без Markdown разметки, без лишних слов.
+Формат ответа:
+[
+  {{"name": "Название игры", "based_on": "Название игры из списка игрока, на которую она похожа", "reason": "Краткая причина на русском языке, почему она понравится"}}
+]
+"""
 
-        # 4. Модели
-        MODELS_TO_TRY = [
-            "google/gemini-2.0-flash-exp:free",
-            "mistralai/mistral-7b-instruct:free",
-            "huggingfaceh4/zephyr-7b-beta:free",
-            "google/gemini-2.0-pro-exp:free",
-        ]
+        # 4. Настройки подключения к VseGPT
+        API_BASE_URL = os.environ.get("VSEGPT_BASE_URL", "https://api.vsegpt.ru/v1/chat/completions")
+        API_KEY = os.environ.get("VSEGPT_API_KEY")
+
+        if not API_KEY:
+            print("❌ ОШИБКА: Ключ VSEGPT_API_KEY не найден в .env")
+            return {"content": {"error": "API ключ ИИ не настроен."}}
 
         async with httpx.AsyncClient() as client:
-            for model_name in MODELS_TO_TRY:
-                for attempt in range(2):
-                    try:
-                        print(f"🔄 Пробуем {model_name}...")
-                        resp = await client.post(
-                            "https://openrouter.ai/api/v1/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY')}",
-                                "HTTP-Referer": "http://localhost:8001",
-                                "Content-Type": "application/json"
-                            },
-                            json={
-                                "model": model_name,
-                                "messages": [{"role": "user", "content": prompt}]
-                            },
-                            timeout=30.0
-                        )
+            print(f"🔄 Отправляем запрос к VseGPT (gpt-4o-mini)...")
+            
+            # Запрос к нейросети
+            resp = await client.post(
+                API_BASE_URL,
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini", # Самая оптимальная по цене/качеству модель
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7
+                },
+                timeout=40.0
+            )
+            
+            result = resp.json()
+            
+            # Обработка ошибок от самого сервиса VseGPT
+            if "error" in result:
+                err_msg = result['error'].get('message', 'Неизвестная ошибка')
+                print(f"⚠️ Ошибка API VseGPT: {err_msg}")
+                return {"content": {"error": "Ошибка на сервере ИИ. Проверьте консоль."}}
+            
+            # Успешный ответ
+            if "choices" in result and len(result["choices"]) > 0:
+                raw_text = result['choices'][0]['message']['content'].strip()
+                print(f"✅ ИИ ответил:\n{raw_text}") # Выводим в терминал для проверки
+                
+                # Очищаем текст от Markdown тегов (ИИ любит оборачивать JSON в ```json ... ```)
+                clean_text = re.sub(r"^```json", "", raw_text, flags=re.MULTILINE)
+                clean_text = re.sub(r"^```", "", clean_text, flags=re.MULTILINE).strip()
+                
+                try:
+                    # Превращаем текст в настоящий массив Python
+                    ai_recommendations = json.loads(clean_text)
+                    recs = []
+                    
+                    for item in ai_recommendations:
+                        g_name = item.get("name", "")
+                        based_on = item.get("based_on", "")
+                        reason = item.get("reason", "")
                         
-                        result = resp.json()
-                        if "error" in result:
-                            err_msg = result['error'].get('message', '')
-                            if "rate limit" in err_msg.lower() or result['error'].get('code') == 429:
-                                await asyncio.sleep(2)
-                                continue
-                            break 
-
-                        if "choices" in result and len(result["choices"]) > 0:
-                            text = result['choices'][0]['message']['content']
-                            print(f"✅ Успех!\n{text}")
+                        # Ищем реальный ID игры в Steam, чтобы сделать кликабельную карточку
+                        real_id = await search_steam_game(client, g_name)
+                        if real_id:
+                            recs.append({
+                                "steam_id": real_id,
+                                "name": g_name,
+                                "based_on": based_on,
+                                "ai_reason": reason,
+                                "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
+                            })
                             
-                            recs = []
-                            for line in text.split('\n'):
-                                line = line.strip()
-                                # Удаляем мусорные теги моделей (<s>, [INST] и т.д.)
-                                line = re.sub(r'<[^>]+>', '', line)
-                                
-                                if "|" in line:
-                                    try:
-                                        parts = line.split("|")
-                                        if len(parts) >= 3:
-                                            # ЖЕСТКАЯ ОЧИСТКА от английских слов
-                                            g_name = re.sub(r'(?i)^(Name:|Название:|Game:|[\d\.\-\s]+)', '', parts[0]).strip()
-                                            based_on = re.sub(r'(?i)^(Based on:|Основано на:|Based|Основано|Source:|[\-\s]+)', '', parts[1]).strip()
-                                            reason = re.sub(r'(?i)^(Reason:|Причина:|Why:|[\-\s]+)', '', parts[2]).strip()
-
-                                            real_id = await search_steam_game(client, g_name)
-                                            if real_id:
-                                                recs.append({
-                                                    "steam_id": real_id,
-                                                    "name": g_name,
-                                                    "based_on": based_on,
-                                                    "ai_reason": reason,
-                                                    "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
-                                                })
-                                    except: continue
-                            
-                            if len(recs) > 0:
-                                return {"content": {"recommendations": recs}}
-                            
-                    except Exception as e:
-                        print(f"⚠️ Сбой: {e}")
-                        continue
-
-            return {"content": {"error": "Серверы перегружены, попробуйте позже."}}
+                    if len(recs) > 0:
+                        return {"content": {"recommendations": recs}}
+                    else:
+                        return {"content": {"error": "ИИ посоветовал игры, но Steam не смог их найти."}}
+                        
+                except json.JSONDecodeError as e:
+                    print(f"❌ Ошибка парсинга JSON: {e}\nТекст был: {clean_text}")
+                    return {"content": {"error": "ИИ выдал ответ в неверном формате."}}
+                    
+            return {"content": {"error": "Пустой ответ от ИИ."}}
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Критическая ошибка ИИ: {e}")
         return {"content": {"error": str(e)}}
 
 @app.get("/api/get-games-list")
