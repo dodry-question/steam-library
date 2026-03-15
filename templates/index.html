@@ -178,7 +178,6 @@
 
         /* Изменения карточки при выделении */
         .card.selectable { cursor: pointer; transition: 0.2s; }
-        .card.selectable a { pointer-events: none; } /* Отключаем переход в Steam в режиме выбора */
         /* --- РЕЖИМ ВЫДЕЛЕНИЯ КАРТОЧЕК --- */
         .card { user-select: none; /* Запрещаем выделение текста при долгом нажатии */ transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; border: 2px solid transparent; }
         .card.selected { border: 2px solid #b829e3; box-shadow: 0 0 20px rgba(184, 41, 227, 0.5); transform: translateY(-5px); }
@@ -275,7 +274,7 @@
             <span style="color: white; font-weight: bold;">Игры выбраны: <span id="selected-count" style="color: #b829e3; font-size: 18px;">0</span></span>
             <button onclick="clearSelection()" style="background: transparent; border: 1px solid #697885; color: #aaa; border-radius: 4px; padding: 5px 10px; cursor: pointer;">Отмена</button>
         </div>
-        <button onclick="getAI()" class="btn-ai active-selection" style="font-size: 14px;">🚀 Найти похожее</button>
+        <button id="panel-ai-btn" onclick="getAI()" class="btn-ai active-selection" style="font-size: 14px;">✨ Найти похожее</button>
     </div>
 
     <div id="ai-block"></div>
@@ -428,7 +427,8 @@ function toggleGameSelection(gameName, cardElement) {
 }
 
 function updateAiButtonState() {
-    const aiBtn = document.getElementById('main-ai-btn'); // Кнопка в шапке
+    const mainAiBtn = document.getElementById('main-ai-btn'); // Кнопка сверху
+    const panelAiBtn = document.getElementById('panel-ai-btn'); // Кнопка на нижней панели
     const selectedCount = document.getElementById('selected-count'); // Счетчик
     const actionPanel = document.getElementById('ai-action-panel'); // Выезжающая панель
     
@@ -436,19 +436,28 @@ function updateAiButtonState() {
         selectedCount.innerText = selectedGames.size;
     }
 
-    // Если есть выделенные игры - показываем панель и блокируем переходы
+    // Если есть выделенные игры - показываем панель
     if (selectedGames.size > 0) {
         isSelectionMode = true;
         actionPanel.style.display = 'flex';
-        aiBtn.innerHTML = `🚀 Искать похожее (${selectedGames.size})`;
-        aiBtn.classList.add('active-selection');
+        
+        // Меняем текст на кнопках (Без ракеты)
+        if (panelAiBtn) panelAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
+        
+        if (mainAiBtn) {
+            mainAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
+            mainAiBtn.classList.add('active-selection');
+        }
         document.querySelectorAll('.card').forEach(c => c.classList.add('selectable'));
     } else {
         // Если игр не осталось - прячем панель
         isSelectionMode = false;
         actionPanel.style.display = 'none';
-        aiBtn.innerHTML = `✨ AI Совет`;
-        aiBtn.classList.remove('active-selection');
+        
+        if (mainAiBtn) {
+            mainAiBtn.innerHTML = `✨ AI Совет`;
+            mainAiBtn.classList.remove('active-selection');
+        }
         document.querySelectorAll('.card').forEach(c => c.classList.remove('selectable'));
     }
 }
