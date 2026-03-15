@@ -197,39 +197,7 @@
     {% endif %}
 </div>
 
-    <div class="controls">
-    {% if user_id %}
-        <button onclick="loadLibrary()" class="btn-load" id="btn-main">Мои игры</button>
-    {% endif %}
-    <button onclick="clearList()" class="btn-clear" title="Очистить экран">🗑️</button>
-    <span style="color: #454d58;">|</span>
-    <button onclick="sortGames('playtime')" class="btn-sort">По времени</button>
-    <button onclick="sortGames('price')" class="btn-sort">По цене</button>
-
-    <div class="controls-right">
-        <div class="mood-container">
-            <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
-                <span id="current-mood-emoji">💎</span>
-                <span class="arrow">▼</span>
-            </div>
-            <div class="mood-menu" id="mood-menu">
-                <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
-                <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
-                <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
-                <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
-                <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
-            </div>
-        </div>
-
-        <!-- Кнопка ИИ получила ID, чтобы мы могли ее менять -->
-        <button onclick="getAI()" id="main-ai-btn" class="btn-ai">✨ AI Совет</button>
-        
-        <div style="display: flex;">
-            <input type="text" id="friend-id" class="input-friend" placeholder="ID друга / Ссылка">
-            <button onclick="loadLibrary(true)" class="btn-friend">Найти</button>
-        </div>
-    </div>
-</div>
+   
 
     <!-- ПРАВАЯ ЧАСТЬ: ИИ и Друзья -->
     <div class="controls-right" style="margin-left: 0;">
@@ -262,16 +230,6 @@
 </div>
 
 <!-- НОВАЯ ПАНЕЛЬ ДЛЯ ОТПРАВКИ ВЫБРАННЫХ ИГР В ИИ -->
-<div id="ai-action-panel">
-    <div style="line-height: 1.4;">
-        <div style="color: #fff; font-size: 16px; font-weight: bold;">Игры выбраны: <span id="ai-selection-count" style="color: #b829e3;">0</span></div>
-        <div id="ai-selection-names" style="color: #697885; font-size: 12px; max-width: 600px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-    </div>
-    <div style="display: flex; gap: 10px;">
-        <button onclick="toggleSelectionMode()" class="btn-clear">Отмена</button>
-        <button onclick="getAIForSelected()" class="btn-ai" style="padding: 10px 20px; font-size: 15px;">🚀 Найти похожее</button>
-    </div>
-</div>
 
     <div id="ai-block"></div>
     <div id="status-bar"></div>
@@ -354,23 +312,38 @@ let pressTimer;
 // Эту функцию мы привяжем к карточкам при их создании
 function setupCardHold(cardElement, gameName) {
     const link = cardElement.querySelector('a');
+    let isLongPressFired = false; // Предохранитель от двойного срабатывания
 
     // Обработка клика
     link.addEventListener('click', (e) => {
         if (isSelectionMode) {
-            e.preventDefault(); // Блокируем переход в Steam, если мы выделяем игры
-            toggleGameSelection(gameName, cardElement);
+            e.preventDefault(); // Блокируем Steam
+            
+            // Если мы только что закончили долгое нажатие, ничего не делаем (игра уже выделилась)
+            // Иначе (это был быстрый обычный клик в режиме выбора) - выделяем/снимаем выделение
+            if (!isLongPressFired) {
+                toggleGameSelection(gameName, cardElement);
+            }
         }
     });
 
     // Обработка долгого зажатия (мышь и сенсор)
     const startPress = (e) => {
         if (e.type === 'mousedown' && e.button !== 0) return; // Только левая кнопка
+        isLongPressFired = false; // Сбрасываем предохранитель
+        
         pressTimer = setTimeout(() => {
+            isLongPressFired = true; // Записываем, что долгое нажатие случилось
+            
             if (!isSelectionMode) {
                 isSelectionMode = true;
+            }
+            
+            // Выделяем игру, только если она еще не выделена
+            if (!selectedGames.has(gameName)) {
                 toggleGameSelection(gameName, cardElement);
             }
+            
         }, 500); // 500 мс удержания для активации
     };
 
