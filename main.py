@@ -410,6 +410,7 @@ async def recommend_selected(request: Request):
                 raw_text = result['choices'][0]['message']['content'].strip()
                 clean_text = re.sub(r"^```json", "", raw_text, flags=re.MULTILINE)
                 clean_text = re.sub(r"^```", "", clean_text, flags=re.MULTILINE).strip()
+                clean_text = re.sub(r',\s*([\]}])', r'\1', clean_text) # Удаляет запятые перед закрывающими скобками
                 
                 try:
                     ai_recommendations = json.loads(clean_text)
