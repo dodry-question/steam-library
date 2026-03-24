@@ -467,15 +467,17 @@ function clearSelection() {
     selectedGames.clear();
     isSelectionMode = false;
     
-    // Безопасное скрытие панели (знак вопроса спасает от ошибки null)
+    // БЕЗОПАСНАЯ ПРОВЕРКА: Ищем панель. Если ее нет в HTML - просто пропускаем эту строку!
     const aiPanel = document.getElementById('ai-action-panel');
-    if (aiPanel) aiPanel.style.display = 'none';
+    if (aiPanel) {
+        aiPanel.style.display = 'none';
+    }
 
-    // Безопасное снятие классов
+    // Безопасное снятие классов выделения с карточек
     document.querySelectorAll('.card.selected').forEach(c => c.classList.remove('selected'));
     document.querySelectorAll('.card.selectable').forEach(c => c.classList.remove('selectable'));
     
-    // Обновляем кнопку, если функция существует
+    // Безопасный вызов обновления кнопки
     if (typeof updateAiButtonState === 'function') {
         updateAiButtonState();
     }
