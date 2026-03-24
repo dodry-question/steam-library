@@ -440,9 +440,12 @@ function updateAiButtonState() {
     // Если есть выделенные игры - показываем панель
     if (selectedGames.size > 0) {
         isSelectionMode = true;
-        actionPanel.style.display = 'flex';
+        // БЕЗОПАСНАЯ ПРОВЕРКА: меняем стиль только если панель существует
+        if (actionPanel) {
+            actionPanel.style.display = 'flex';
+        }
         
-        // Меняем текст на кнопках (Без ракеты)
+        // Меняем текст на кнопках
         if (panelAiBtn) panelAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
         
         if (mainAiBtn) {
@@ -453,7 +456,10 @@ function updateAiButtonState() {
     } else {
         // Если игр не осталось - прячем панель
         isSelectionMode = false;
-        actionPanel.style.display = 'none';
+        // БЕЗОПАСНАЯ ПРОВЕРКА: прячем только если панель существует
+        if (actionPanel) {
+            actionPanel.style.display = 'none';
+        }
         
         if (mainAiBtn) {
             mainAiBtn.innerHTML = `✨ AI Совет`;
@@ -557,11 +563,15 @@ async function getAI() {
                 </div>`;
             });
             html += '</div>';
-            block.innerHTML = html;
+            block.innerHTML = html; // Карточки нарисовались!
             
-            // 4. Безопасный вызов clearSelection (чтобы не крашилось, если функции нет)
-            if (typeof clearSelection === "function") {
-                clearSelection(); 
+            // 4. ИЗОЛИРОВАННАЯ очистка. Если она сломается, карточки не исчезнут!
+            try {
+                if (typeof clearSelection === "function") {
+                    clearSelection(); 
+                }
+            } catch (cleanupError) {
+                console.warn("Ошибка интерфейса при очистке (игнорируем):", cleanupError);
             }
         } else {
             block.innerHTML = 'ИИ не смог подобрать игры. Попробуйте сменить настроение.';
