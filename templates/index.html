@@ -196,6 +196,19 @@
         .btn-ai { background: linear-gradient(45deg, #6b2cf5, #b829e3); font-weight: bold; transition: 0.3s; }
         .btn-ai.active-selection { background: linear-gradient(45deg, #ff007a, #b829e3); animation: pulse-ai 2s infinite; padding: 8px 20px; font-size: 14px; }
         @keyframes pulse-ai { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 122, 0.6); } 70% { box-shadow: 0 0 0 10px rgba(255, 0, 122, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 0, 122, 0); } }
+                /* Стили для галереи рекомендаций ИИ */
+        .ai-gallery {
+            display: flex;
+            flex-wrap: wrap; /* Если карточек много, они перенесутся на следующий ряд */
+            gap: 20px;       /* Красивое расстояние между карточками */
+            justify-content: flex-start; /* Прижимаем карточки к левому краю */
+            margin-top: 15px; /* Отступ от заголовка */
+        }
+        .ai-gallery .card {
+            margin: 0; /* Убираем стандартные отступы, так как теперь работает gap */
+            display: flex;
+            flex-direction: column;
+        }
     </style>
 </head>
 <body>
