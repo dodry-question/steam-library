@@ -209,6 +209,88 @@
             display: flex;
             flex-direction: column;
         }
+        /* --- ПУСТОЙ ЭКРАН (ОНБОРДИНГ) --- */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-top: 60px;
+            text-align: center;
+            animation: fadeIn 0.6s ease-out;
+        }
+        .empty-title {
+            font-size: 32px;
+            color: #ffffff;
+            margin: 0 0 10px 0;
+            text-shadow: 0 0 15px rgba(102, 192, 244, 0.4);
+            letter-spacing: 1px;
+        }
+        .empty-subtitle {
+            color: #8f98a0;
+            font-size: 16px;
+            margin-bottom: 50px;
+            max-width: 600px;
+            line-height: 1.5;
+        }
+        .features-grid {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            margin-bottom: 50px;
+            flex-wrap: wrap;
+        }
+        .feature-card {
+            background: #16202d;
+            border: 1px solid #2a3f5a;
+            border-radius: 8px;
+            padding: 30px 20px;
+            width: 260px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+            transition: transform 0.3s, border-color 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: #66c0f4;
+        }
+        .feature-icon {
+            font-size: 45px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 10px rgba(255,255,255,0.1));
+        }
+        .feature-card h3 {
+            color: #c7d5e0;
+            font-size: 18px;
+            margin: 0 0 12px 0;
+            white-space: normal;
+        }
+        .feature-card p {
+            color: #697885;
+            font-size: 14px;
+            line-height: 1.5;
+            margin: 0;
+        }
+        .empty-cta {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        /* Пульсирующая кнопка для авторизованных */
+        .btn-pulse-green {
+            animation: pulse-green 2s infinite;
+            font-size: 16px;
+            padding: 12px 30px;
+            border-radius: 4px;
+        }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(164, 208, 7, 0.5); }
+            70% { box-shadow: 0 0 0 15px rgba(164, 208, 7, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(164, 208, 7, 0); }
+        }
     </style>
 </head>
 <body>
@@ -293,6 +375,42 @@
 
     <div id="ai-block"></div>
     <div id="status-bar"></div>
+    <!-- ПУСТОЙ ЭКРАН (ВИТРИНА ФИШЕК) -->
+    <div id="empty-state" class="empty-state">
+        <h2 class="empty-title">Твоя Умная Библиотека</h2>
+        <p class="empty-subtitle">Анализируй коллекцию, следи за скидками и доверь выбор следующей игры продвинутой нейросети.</p>
+        
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">💰</div>
+                <h3>Цены и Скидки</h3>
+                <p>Узнай актуальную стоимость всех своих игр и не пропусти распродажи прямо сейчас.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⏱️</div>
+                <h3>Твоё Время</h3>
+                <p>Удобная сортировка покажет, в каких мирах ты оставил больше всего часов своей жизни.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">✨</div>
+                <h3>AI-Советник</h3>
+                <p>Не знаешь во что поиграть? ИИ подберет идеальную игру под твое текущее настроение.</p>
+            </div>
+        </div>
+
+        <div class="empty-cta">
+            {% if user_id %}
+                <button onclick="loadLibrary()" class="btn-load btn-pulse-green">🎮 Загрузить мои игры</button>
+                <span style="color: #697885; font-size: 14px;">или введи ID друга в поиске сверху ☝️</span>
+            {% else %}
+                <a href="/login" class="btn-steam" style="font-size: 16px; padding: 12px 24px;">
+                    <div class="steam-icon"></div>
+                    Войти через Steam
+                </a>
+                <span style="color: #697885; font-size: 14px;">чтобы увидеть свою статистику и получить AI-советы</span>
+            {% endif %}
+        </div>
+    </div>
     <div class="gallery" id="container"></div>
 
     <script>
@@ -307,10 +425,13 @@
             if(isProcessing) return;
             document.getElementById('container').innerHTML = '';
             loadedGames = [];
-            currentLoadedTarget = null; // Сбрасываем цель при очистке
+            currentLoadedTarget = null;
             document.getElementById('copy-btn').style.display = 'none';
             document.getElementById('status-bar').innerText = '';
             document.getElementById('ai-block').style.display = 'none';
+            
+            // Показываем пустой экран
+            document.getElementById('empty-state').style.display = 'flex';
         }
 
         /* --- ЛОГИКА МЕНЮ НАСТРОЕНИЯ --- */
@@ -641,6 +762,7 @@ async function loadLibrary(isFriend = false) {
     
     // Принудительно очищаем старый список перед новой загрузкой
     // (напрямую, чтобы не сбросить currentLoadedTarget)
+    document.getElementById('empty-state').style.display = 'none';
     document.getElementById('container').innerHTML = '';
     loadedGames = [];
     document.getElementById('copy-btn').style.display = 'none';
