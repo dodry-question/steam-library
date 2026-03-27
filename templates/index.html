@@ -417,12 +417,20 @@
         let loadedGames = [];
         let isProcessing = false;
         let currentMood = "hidden gems";
-
         let currentLoadedTarget = null; // Запоминаем, чей профиль сейчас на экране
+        let syncController = null; // Стоп-кран для фоновой загрузки
 
         /* --- ОСНОВНЫЕ ФУНКЦИИ --- */
-        function clearList() {
+       function clearList() {
             if(isProcessing) return;
+            
+            // 1. ДЕРГАЕМ СТОП-КРАН: Обрываем фоновую загрузку цен, если она идет
+            if (syncController) {
+                syncController.abort();
+                syncController = null;
+            }
+
+            // 2. Очищаем экран
             document.getElementById('container').innerHTML = '';
             loadedGames = [];
             currentLoadedTarget = null;
@@ -430,8 +438,9 @@
             document.getElementById('status-bar').innerText = '';
             document.getElementById('ai-block').style.display = 'none';
             
-            // Показываем пустой экран
-            document.getElementById('empty-state').style.display = 'flex';
+            // 3. Возвращаем витрину фишек
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = 'flex';
         }
 
         /* --- ЛОГИКА МЕНЮ НАСТРОЕНИЯ --- */
@@ -456,15 +465,6 @@
             if (menu) menu.style.display = 'none';
         });
 
-        /* --- ОСНОВНЫЕ ФУНКЦИИ --- */
-        function clearList() {
-            if(isProcessing) return;
-            document.getElementById('container').innerHTML = '';
-            loadedGames = [];
-            document.getElementById('copy-btn').style.display = 'none';
-            document.getElementById('status-bar').innerText = '';
-            document.getElementById('ai-block').style.display = 'none';
-        }
 
         async function copyLibrary() {
             if (loadedGames.length === 0) return;
@@ -754,6 +754,12 @@ async function loadLibrary(isFriend = false) {
         return; 
     }
 
+    // Если запускаем новый поиск, жестко рубим старый фоновый процесс
+    if (syncController) {
+        syncController.abort();
+        syncController = null;
+    }
+    
     // Начинаем новую загрузку
     isProcessing = true;
     currentLoadedTarget = targetIdentifier; // Запоминаем текущую цель
@@ -829,11 +835,15 @@ async function startBackgroundSync(rawList) {
         return g.appid;
     });
 
+    // Создаем новый стоп-кран для текущей загрузки
+    syncController = new AbortController();
+
     try {
         const resp = await fetch('/api/games-batch', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ steam_ids: ids, playtimes: playtimes, game_names: names })
+            body: JSON.stringify({ steam_ids: ids, playtimes: playtimes, game_names: names }),
+            signal: syncController.signal // <-- Привязываем запрос к стоп-крану
         });
 
         const reader = resp.body.getReader();
@@ -844,9 +854,7 @@ async function startBackgroundSync(rawList) {
             const { done, value } = await reader.read();
             
             if (done) {
-                // ФИНАЛ: Когда поток данных полностью закрыт
                 statusBar.innerHTML = `✅ Загрузка завершена! Обработано деталей: ${processedCount} из ${total}`;
-                // Через 5 секунд можно совсем очистить статус, чтобы не мешал
                 setTimeout(() => { if(statusBar.innerText.includes('Загрузка завершена')) statusBar.innerText = ''; }, 5000);
                 break;
             }
@@ -861,7 +869,6 @@ async function startBackgroundSync(rawList) {
                     const fullData = JSON.parse(line);
                     processedCount++;
                     
-                    // Обновляем статус в реальном времени (опционально, чтобы видеть движение)
                     if (total > 100 && processedCount % 5 === 0) {
                         statusBar.innerHTML = `⚙️ Синхронизация цен... ${processedCount} / ${total}`;
                     }
@@ -874,8 +881,13 @@ async function startBackgroundSync(rawList) {
             }
         }
     } catch (e) {
-        console.error("Ошибка фоновой синхронизации:", e);
-        statusBar.innerHTML = `<span style="color: #ff6c6c;">⚠️ Фоновая загрузка прервана</span>`;
+        // Если ошибка произошла из-за того, что мы сами нажали "Очистить"
+        if (e.name === 'AbortError') {
+            console.log('Фоновая загрузка остановлена пользователем.');
+        } else {
+            console.error("Ошибка фоновой синхронизации:", e);
+            statusBar.innerHTML = `<span style="color: #ff6c6c;">⚠️ Фоновая загрузка прервана</span>`;
+        }
     }
 }
 
