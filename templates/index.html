@@ -291,6 +291,84 @@
             70% { box-shadow: 0 0 0 15px rgba(164, 208, 7, 0); }
             100% { box-shadow: 0 0 0 0 rgba(164, 208, 7, 0); }
         }
+        /* --- ЕДИНАЯ КНОПКА ИИ (SPLIT BUTTON) --- */
+        .ai-split-container {
+            display: flex;
+            position: relative;
+            background: linear-gradient(45deg, #6b2cf5, #b829e3);
+            border-radius: 4px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: 0.3s;
+        }
+        .ai-split-container:hover {
+            box-shadow: 0 6px 15px rgba(184, 41, 227, 0.5);
+            transform: translateY(-1px);
+        }
+        
+        /* Анимация выделения (пульс) применяется ко всему контейнеру */
+        .ai-split-container.active-selection {
+            background: linear-gradient(45deg, #ff007a, #b829e3);
+            animation: pulse-ai 2s infinite;
+        }
+
+        /* Левая часть: Запуск ИИ */
+        .btn-ai-main {
+            background: transparent;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            border-radius: 4px 0 0 4px;
+            transition: background 0.2s;
+        }
+        .btn-ai-main:hover { background: rgba(255, 255, 255, 0.1); }
+
+        /* Правая часть: Выбор настроения */
+        .btn-ai-dropdown {
+            background: transparent;
+            color: white;
+            border: none;
+            border-left: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 10px;
+            cursor: pointer;
+            border-radius: 0 4px 4px 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 16px; /* Размер эмодзи */
+            transition: background 0.2s;
+        }
+        .btn-ai-dropdown:hover { background: rgba(255, 255, 255, 0.1); }
+        .btn-ai-dropdown .arrow { font-size: 10px; color: rgba(255, 255, 255, 0.8); }
+
+        /* Меню настроения */
+        .mood-menu {
+            display: none;
+            position: absolute;
+            top: 115%;
+            right: 0;
+            background: #171a21;
+            border: 1px solid #b829e3;
+            border-radius: 4px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+            z-index: 2000;
+            min-width: 220px;
+            overflow: hidden;
+        }
+        .mood-item {
+            padding: 10px 15px;
+            color: #c7d5e0;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .mood-item:hover { background: #6b2cf5; color: white; }
+        .mood-item.active { background: #2a3f5a; color: #66c0f4; }
     </style>
 </head>
 <body>
@@ -348,10 +426,18 @@
 
         <!-- ПРАВАЯ ЧАСТЬ -->
         <div style="display: flex; gap: 10px; align-items: center;">
-            <div class="mood-container">
-                <div class="mood-trigger" id="mood-trigger" title="Настроить рекомендации">
+            
+            <!-- ЕДИНАЯ КНОПКА ИИ -->
+            <div class="ai-split-container" id="ai-split-container">
+                <!-- Левая кнопка: Действие -->
+                <button onclick="getAI()" class="btn-ai-main" id="main-ai-btn" title="Сгенерировать рекомендацию">✨ AI Совет</button>
+                
+                <!-- Правая кнопка: Выбор настроения -->
+                <button class="btn-ai-dropdown" id="mood-trigger" title="Настроить фильтр (настроение)">
                     <span id="current-mood-emoji">💎</span><span class="arrow">▼</span>
-                </div>
+                </button>
+                
+                <!-- Выпадающее меню -->
                 <div class="mood-menu" id="mood-menu">
                     <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
                     <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
@@ -360,8 +446,6 @@
                     <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
                 </div>
             </div>
-
-            <button onclick="getAI()" class="btn-ai" id="main-ai-btn">✨ AI Совет</button>
             
             <div style="display: flex;">
                 <input type="text" id="friend-id" class="input-friend" placeholder="ID друга" style="width: 100px;">
@@ -583,43 +667,63 @@ function toggleGameSelection(gameName, cardElement) {
 }
 
 function updateAiButtonState() {
-    const mainAiBtn = document.getElementById('main-ai-btn'); // Кнопка сверху
-    const panelAiBtn = document.getElementById('panel-ai-btn'); // Кнопка на нижней панели
-    const selectedCount = document.getElementById('selected-count'); // Счетчик
-    const actionPanel = document.getElementById('ai-action-panel'); // Выезжающая панель
+    const mainAiBtn = document.getElementById('main-ai-btn'); // Текст левой части новой кнопки
+    const aiContainer = document.getElementById('ai-split-container'); // ВЕСЬ контейнер новой кнопки
+    
+    // Элементы выезжающей панели (если она используется)
+    const panelAiBtn = document.getElementById('panel-ai-btn'); 
+    const selectedCount = document.getElementById('selected-count'); 
+    const actionPanel = document.getElementById('ai-action-panel'); 
     
     if (selectedCount) {
         selectedCount.innerText = selectedGames.size;
     }
 
-    // Если есть выделенные игры - показываем панель
+    // Если есть выделенные игры - переходим в режим выделения
     if (selectedGames.size > 0) {
         isSelectionMode = true;
-        // БЕЗОПАСНАЯ ПРОВЕРКА: меняем стиль только если панель существует
+        
+        // Показываем выезжающую нижнюю панель (если она есть в HTML)
         if (actionPanel) {
             actionPanel.style.display = 'flex';
         }
         
-        // Меняем текст на кнопках
+        // Меняем текст на кнопке нижней панели
         if (panelAiBtn) panelAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
         
+        // Меняем текст на главной верхней кнопке
         if (mainAiBtn) {
             mainAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
-            mainAiBtn.classList.add('active-selection');
         }
+        
+        // ДОБАВЛЯЕМ ПУЛЬСАЦИЮ: применяется ко всему контейнеру (градиенту)
+        if (aiContainer) {
+            aiContainer.classList.add('active-selection');
+        }
+        
+        // Делаем карточки визуально кликабельными
         document.querySelectorAll('.card').forEach(c => c.classList.add('selectable'));
+        
     } else {
-        // Если игр не осталось - прячем панель
+        // Если игр не осталось - возвращаем обычный режим
         isSelectionMode = false;
-        // БЕЗОПАСНАЯ ПРОВЕРКА: прячем только если панель существует
+        
+        // Прячем нижнюю панель
         if (actionPanel) {
             actionPanel.style.display = 'none';
         }
         
+        // Возвращаем исходный текст верхней кнопке
         if (mainAiBtn) {
             mainAiBtn.innerHTML = `✨ AI Совет`;
-            mainAiBtn.classList.remove('active-selection');
         }
+        
+        // УБИРАЕМ ПУЛЬСАЦИЮ с контейнера
+        if (aiContainer) {
+            aiContainer.classList.remove('active-selection');
+        }
+        
+        // Убираем курсор-указатель с карточек
         document.querySelectorAll('.card').forEach(c => c.classList.remove('selectable'));
     }
 }
@@ -759,7 +863,7 @@ async function loadLibrary(isFriend = false) {
         syncController.abort();
         syncController = null;
     }
-    
+
     // Начинаем новую загрузку
     isProcessing = true;
     currentLoadedTarget = targetIdentifier; // Запоминаем текущую цель
