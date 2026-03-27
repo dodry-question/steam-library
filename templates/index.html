@@ -300,6 +300,19 @@
         let isProcessing = false;
         let currentMood = "hidden gems";
 
+        let currentLoadedTarget = null; // Запоминаем, чей профиль сейчас на экране
+
+        /* --- ОСНОВНЫЕ ФУНКЦИИ --- */
+        function clearList() {
+            if(isProcessing) return;
+            document.getElementById('container').innerHTML = '';
+            loadedGames = [];
+            currentLoadedTarget = null; // Сбрасываем цель при очистке
+            document.getElementById('copy-btn').style.display = 'none';
+            document.getElementById('status-bar').innerText = '';
+            document.getElementById('ai-block').style.display = 'none';
+        }
+
         /* --- ЛОГИКА МЕНЮ НАСТРОЕНИЯ --- */
         document.getElementById('mood-trigger').addEventListener('click', function(e) {
             const menu = document.getElementById('mood-menu');
@@ -363,6 +376,14 @@ function liveSearch() {
         card.style.display = name.includes(query) ? 'flex' : 'none';
     });
 }
+
+// Поиск профиля по нажатию Enter в поле "ID друга"
+document.getElementById('friend-id').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+        e.preventDefault(); // Предотвращаем стандартное поведение
+        loadLibrary(true);
+    }
+});
 
 /* --- СИСТЕМА ДОЛГОГО НАЖАТИЯ И ВЫДЕЛЕНИЯ (SHIFT / УДЕРЖАНИЕ) --- */
 let isSelectionMode = false;
@@ -596,21 +617,41 @@ async function getAI() {
     }
 }
 
-        // --- В index.html ---
-
 async function loadLibrary(isFriend = false) {
     if (isProcessing) return;
+    
+    // Определяем, чей профиль мы хотим загрузить
+    let targetIdentifier = 'me'; // По умолчанию "Мои игры"
+    if (isFriend) {
+        const inp = document.getElementById('friend-id').value.trim();
+        if (!inp) return; // Если поле пустое, ничего не делаем
+        targetIdentifier = inp;
+    }
+
+    // Если этот же профиль уже загружен на экран - просто игнорируем нажатие
+    if (currentLoadedTarget === targetIdentifier && loadedGames.length > 0) {
+        return; 
+    }
+
+    // Начинаем новую загрузку
     isProcessing = true;
+    currentLoadedTarget = targetIdentifier; // Запоминаем текущую цель
     
     const statusBar = document.getElementById('status-bar');
-    clearList();
+    
+    // Принудительно очищаем старый список перед новой загрузкой
+    // (напрямую, чтобы не сбросить currentLoadedTarget)
+    document.getElementById('container').innerHTML = '';
+    loadedGames = [];
+    document.getElementById('copy-btn').style.display = 'none';
+    document.getElementById('ai-block').style.display = 'none';
+
     statusBar.innerHTML = '<span class="spinner"></span> Запрашиваем список у Steam...';
 
     try {
         let url = '/api/get-games-list';
-        if (isFriend) {
-            const inp = document.getElementById('friend-id').value;
-            if(inp) url += `?user_id=${encodeURIComponent(inp)}`;
+        if (isFriend && targetIdentifier !== 'me') {
+            url += `?user_id=${encodeURIComponent(targetIdentifier)}`;
         }
 
         const resp = await fetch(url);
@@ -618,7 +659,6 @@ async function loadLibrary(isFriend = false) {
 
         if (data.games) {
             const total = data.games.length;
-            // Сохраняем базу для ИИ (он может работать уже сейчас!)
             loadedGames = data.games.map(g => ({
                 steam_id: g.appid,
                 name: g.name,
@@ -630,22 +670,25 @@ async function loadLibrary(isFriend = false) {
 
             document.getElementById('copy-btn').style.display = 'inline-block';
 
-            // ШАГ 1: Мгновенная отрисовка "базы"
+            // Отрисовка базы
             statusBar.innerText = `Найдено ${total} игр. Отрисовываем...`;
-            loadedGames.forEach(g => addCard(g)); // Рисуем сразу все картинки и названия
+            loadedGames.forEach(g => addCard(g));
 
-            // ШАГ 2: Если игр много (>100), пишем предупреждение о фоновой загрузке
             if (total > 100) {
                 statusBar.innerHTML = `✅ Список готов. <span style="color:#a4d007">Цены и жанры подгружаются в фоне...</span>`;
             } else {
                 statusBar.innerHTML = `✅ Загружено ${total} игр.`;
             }
 
-            // ШАГ 3: Фоновая догрузка деталей (цены, жанры, скидки)
             startBackgroundSync(data.games);
+        } else if (data.error) {
+            // Если Steam профиль скрыт или ID неверный
+            statusBar.innerHTML = `<span style="color: #ff5c5c;">⚠️ Ошибка: ${data.error}</span>`;
+            currentLoadedTarget = null; // Сбрасываем цель, чтобы можно было попробовать снова
         }
     } catch (e) {
         statusBar.innerText = "Ошибка соединения";
+        currentLoadedTarget = null;
     } finally {
         isProcessing = false;
     }

@@ -469,16 +469,30 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
             return {"error": str(e)}
         
 async def resolve_steam_id(input_str: str) -> Optional[str]:
-    input_str = input_str.strip()
-    if input_str.isdigit() and len(input_str) == 17: return input_str
-    clean = input_str.split('/')[-1] if '/' not in input_str else input_str.rstrip('/').split('/')[-1]
+    input_str = input_str.strip().strip('/')
+    
+    # 1. Ищем 17-значный SteamID64 (он всегда начинается с 7656119...) в любом месте строки
+    match_64 = re.search(r'\b(7656119[0-9]{10})\b', input_str)
+    if match_64:
+        return match_64.group(1)
+        
+    # 2. Если это ссылка с кастомным URL (vanity name)
+    if 'steamcommunity.com/id/' in input_str:
+        clean = input_str.split('steamcommunity.com/id/')[-1].split('/')[0]
+    else:
+        # Если ввели просто текст или кусок ссылки
+        clean = input_str.split('/')[-1]
+        
+    # 3. Делаем запрос к Steam для расшифровки кастомного имени
     url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean}"
     async with httpx.AsyncClient() as client:
         try:
             resp = await client.get(url)
             d = resp.json()
-            if d['response']['success'] == 1: return d['response']['steamid']
+            if d.get('response', {}).get('success') == 1:
+                return d['response']['steamid']
         except: pass
+        
     return None
 
 @app.post("/api/add-game")
