@@ -261,6 +261,9 @@ async def recommend(request: Request):
         all_games = body.get("games", [])
         mood = body.get("mood", "hidden gems")
         
+        # НОВОЕ: Достаем историю рекомендаций
+        already_recommended = body.get("already_recommended", [])
+        
         # 1. Подготовка данных: любимые игры (для основы)
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:15]
         core_names = ", ".join([g['name'] for g in top_played])
@@ -269,19 +272,21 @@ async def recommend(request: Request):
         exclusions = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:300]
         owned_names = ", ".join([g['name'] for g in exclusions])
 
+        # НОВОЕ: Формируем дополнительное правило, если история не пустая
+        history_rule = f"\n2. ТАКЖЕ ЗАПРЕЩЕНО советовать эти игры (ты их уже рекомендовал ранее): {', '.join(already_recommended)}." if already_recommended else ""
+
         # 3. Промпт с жестким требованием вернуть JSON
         prompt = f"""
 Ты игровой эксперт. Игрок любит эти игры: {core_names}.
 Посоветуй ровно 3 игры в Steam, которые подойдут под настроение: '{mood}'.
 СТРОГИЕ ПРАВИЛА:
-1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.
-2. Твой ответ должен быть СТРОГО в формате валидного JSON-массива, без Markdown разметки, без лишних слов.
+1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
+3. Твой ответ должен быть СТРОГО в формате валидного JSON-массива, без Markdown разметки, без лишних слов.
 Формат ответа:
 [
   {{"name": "Название игры", "based_on": "Название игры из списка игрока, на которую она похожа", "reason": "Краткая причина на русском языке, почему она понравится"}}
 ]
 """
-
         # 4. Настройки подключения к VseGPT
         API_BASE_URL = os.environ.get("VSEGPT_BASE_URL", "https://api.vsegpt.ru/v1/chat/completions")
         API_KEY = os.environ.get("VSEGPT_API_KEY")
@@ -369,27 +374,32 @@ async def recommend_selected(request: Request):
         target_games = body.get("target_games", [])
         mood = body.get("mood", "hidden gems")
         
+        # НОВОЕ: Достаем историю рекомендаций
+        already_recommended = body.get("already_recommended", [])
+        
         if not target_games:
             return {"content": {"error": "Игры не выбраны"}}
             
         targets_str = ", ".join(target_games)
         
-        # Исключения: берем побольше игр из библиотеки, чтобы ИИ их не советовал
         exclusions = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:350]
         owned_names = ", ".join([g['name'] for g in exclusions])
 
-        # Специальный промпт для списка игр
+        # НОВОЕ: Правило для истории
+        history_rule = f"\n2. ТАКЖЕ ЗАПРЕЩЕНО советовать эти игры (ты их уже рекомендовал ранее): {', '.join(already_recommended)}." if already_recommended else ""
+
         prompt = f"""
 Ты игровой эксперт. Игрок выбрал эти игры из своей библиотеки: {targets_str}.
 Посоветуй ровно 3 игры в Steam, которые максимально похожи на этот набор игр (по геймплею, атмосфере, жанру), учитывая настроение: '{mood}'.
 СТРОГИЕ ПРАВИЛА:
-1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.
-2. Ответ СТРОГО в формате JSON-массива, без Markdown, без лишних слов.
+1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
+3. Ответ СТРОГО в формате JSON-массива, без Markdown, без лишних слов.
 Формат ответа:
 [
   {{"name": "Название игры", "based_on": "На какую из выбранных игр она больше всего похожа", "reason": "Кратко на русском, почему она подойдет этому игроку (смешанная механика, похожий сеттинг и т.д.)"}}
 ]
 """
+
         API_BASE_URL = os.environ.get("VSEGPT_BASE_URL", "https://api.vsegpt.ru/v1/chat/completions")
         API_KEY = os.environ.get("VSEGPT_API_KEY")
 

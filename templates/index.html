@@ -503,6 +503,7 @@
         let currentMood = "hidden gems";
         let currentLoadedTarget = null; // Запоминаем, чей профиль сейчас на экране
         let syncController = null; // Стоп-кран для фоновой загрузки
+        let recommendedHistory = {}; // Хранит историю рекомендаций по настроениям
 
         /* --- ОСНОВНЫЕ ФУНКЦИИ --- */
        function clearList() {
@@ -518,6 +519,7 @@
             document.getElementById('container').innerHTML = '';
             loadedGames = [];
             currentLoadedTarget = null;
+            recommendedHistory = {};
             document.getElementById('copy-btn').style.display = 'none';
             document.getElementById('status-bar').innerText = '';
             document.getElementById('ai-block').style.display = 'none';
@@ -758,14 +760,26 @@ async function getAI() {
     block.style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
+    // НОВОЕ: Достаем историю рекомендаций именно для текущего настроения
+    let historyForCurrentMood = recommendedHistory[currentMood] || [];
+
     let endpoint = '/api/recommend';
-    let bodyData = { games: loadedGames, mood: currentMood };
+    let bodyData = { 
+        games: loadedGames, 
+        mood: currentMood,
+        already_recommended: historyForCurrentMood // Передаем историю ИИ
+    };
     let loadingText = 'ИИ анализирует ваш профиль (обычно занимает 10-15 сек)...';
 
     if (isSelectionMode && selectedGames.size > 0) {
         endpoint = '/api/recommend-selected';
         const targetGamesArray = Array.from(selectedGames);
-        bodyData = { games: loadedGames, target_games: targetGamesArray, mood: currentMood };
+        bodyData = { 
+            games: loadedGames, 
+            target_games: targetGamesArray, 
+            mood: currentMood,
+            already_recommended: historyForCurrentMood // Передаем историю ИИ
+        };
         loadingText = `ИИ подбирает игры, похожие на: <b>${targetGamesArray.join(', ')}</b>...`;
     }
 
@@ -800,6 +814,18 @@ async function getAI() {
         const recs = data.content.recommendations;
         
         if (recs && recs.length > 0) {
+            // --- НОВОЕ: Сохраняем выданные игры в историю ТЕКУЩЕГО настроения ---
+            if (!recommendedHistory[currentMood]) {
+                recommendedHistory[currentMood] = [];
+            }
+            recs.forEach(r => {
+                // Добавляем, только если ее там еще нет
+                if (!recommendedHistory[currentMood].includes(r.name)) {
+                    recommendedHistory[currentMood].push(r.name);
+                }
+            });
+            // ---------------------------------------------------------------------
+
             let titleText = isSelectionMode ? "✨ На основе вашего выбора:" : "🤖 Рекомендации профиля:";
             let html = `<h3 style="color:#fff; margin:0 0 10px 0;">${titleText}</h3><div class="ai-gallery">`;
             
@@ -867,6 +893,7 @@ async function loadLibrary(isFriend = false) {
     // Начинаем новую загрузку
     isProcessing = true;
     currentLoadedTarget = targetIdentifier; // Запоминаем текущую цель
+    recommendedHistory = {}; // Сбрасываем историю ИИ при загрузке библиотеки
     
     const statusBar = document.getElementById('status-bar');
     
