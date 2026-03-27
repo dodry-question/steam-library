@@ -620,7 +620,7 @@ async function getAI() {
 async function loadLibrary(isFriend = false) {
     if (isProcessing) return;
     
-    // Определяем, чей профиль мы хотим загрузить
+    // Определяем, чей профиль мы хотим-загрузить
     let targetIdentifier = 'me'; // По умолчанию "Мои игры"
     if (isFriend) {
         const inp = document.getElementById('friend-id').value.trim();
