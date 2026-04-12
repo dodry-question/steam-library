@@ -9,10 +9,14 @@
         /* --- БАЗОВЫЕ СТИЛИ --- */
         body { font-family: 'Segoe UI', sans-serif; background-color: #1b2838; color: #c7d5e0; padding: 40px; margin: 0; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background-color: #171a21; padding: 15px 20px; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        .header { display: flex; justify-content: flex-start; align-items: center; margin-bottom: 25px; background-color: #171a21; padding: 15px 20px; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
         h1 { color: #ffffff; text-shadow: 0 0 5px #66c0f4; margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+        .header-title-wrapper { display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
+        .timezone-badge { font-size: 11px; color: #697885; margin-top: 4px; cursor: help; width: fit-content; border-bottom: 1px dashed #697885; transition: 0.2s; }
+        .timezone-badge:hover { color: #66c0f4; border-bottom-color: #66c0f4; }
         
-        .user-profile { display: flex; align-items: center; justify-content: flex-end; }
+        .user-profile { display: flex; align-items: center; justify-content: flex-end; margin-left: auto; }
+        .login-wrapper { margin-left: auto; }
         .user-info-col { display: flex; flex-direction: column; justify-content: center; line-height: 1.2; text-align: right; margin-right: 12px; }
         .user-name { font-weight: bold; color: #66c0f4; font-size: 14px; white-space: nowrap; }
         .btn-logout { color: #8f98a0; text-decoration: none; font-size: 11px; text-transform: uppercase; }
@@ -172,7 +176,7 @@
         .btn-ai.active-selection { background: linear-gradient(45deg, #ff007a, #b829e3); animation: pulse-ai 2s infinite; padding: 8px 20px; font-size: 14px; }
         @keyframes pulse-ai { 0% { box-shadow: 0 0 0 0 rgba(255, 0, 122, 0.6); } 70% { box-shadow: 0 0 0 10px rgba(255, 0, 122, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 0, 122, 0); } }
                 /* --- НОВЫЙ ПОИСКОВИК (В ШАПКЕ) --- */
-        .search-container { display: flex; align-items: center; max-width: 400px; width: 100%; margin: 0 20px; }
+        .search-container { display: flex; align-items: center; max-width: 400px; width: 100%; margin-left: 40px; margin-right: 0; }
         .search-input { width: 100%; padding: 10px 15px; border-radius: 4px 0 0 4px; border: 1px solid #3e464e; background: #1b2128; color: white; outline: none; transition: 0.2s; font-family: inherit; font-size: 14px; }
         .search-input:focus { border-color: #66c0f4; box-shadow: inset 0 0 5px rgba(102, 192, 244, 0.2); }
         .search-btn { padding: 10px 16px; border-radius: 0 4px 4px 0; background: #2a3f5a; border: 1px solid #2a3f5a; color: white; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
@@ -431,13 +435,14 @@
                 padding: 15px; 
                 gap: 15px; 
             }
+            .header-title-wrapper {
+                flex-grow: 1;
+                width: auto;
+            }
             h1 { 
                 font-size: 18px; 
-                width: auto; 
                 margin: 0; 
-                flex-grow: 1; /* Выталкивает профиль вправо */
-                justify-content: flex-start; 
-            } 
+            }
             #copy-btn { margin-left: 8px; }
             .user-profile { 
                 width: auto; 
@@ -550,12 +555,17 @@
 <body>
     <!-- ШАПКА -->
     <div class="header">
-        <h1>
-            Моя Библиотека
-            <span id="copy-btn" onclick="copyLibrary()" title="Скопировать список игр" style="display:none; cursor:pointer; font-size: 18px; margin-left: 12px; vertical-align: middle; opacity: 0.6; transition: 0.2s;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#66c0f4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </span>
-        </h1>
+        <!-- Оборачиваем заголовок и время в группу, чтобы не ломать дизайн -->
+        <div class="header-title-wrapper">
+            <h1>
+                Моя Библиотека
+                <span id="copy-btn" onclick="copyLibrary()" title="Скопировать список игр" style="display:none; cursor:pointer; font-size: 18px; margin-left: 12px; vertical-align: middle; opacity: 0.6; transition: 0.2s;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#66c0f4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </span>
+            </h1>
+            <!-- Новая строчка часового пояса -->
+            <div id="user-tz" class="timezone-badge" title="Определяем пояс...">🕒 Определяем...</div>
+        </div>
 
         <!-- ПОИСКОВИК -->
         <div class="search-container">
@@ -705,12 +715,41 @@
         let loadedGames = [];
         let isProcessing = false;
         let currentMood = "hidden gems";
-        let currentLoadedTarget = null; // Запоминаем, чей профиль сейчас на экране
-        let syncController = null; // Стоп-кран для фоновой загрузки
-        let recommendedHistory = {}; // Хранит историю рекомендаций по настроениям
+        let currentLoadedTarget = null;
+        let syncController = null;
+        let recommendedHistory = {}; 
+
+        /* --- ОПРЕДЕЛЕНИЕ ЧАСОВОГО ПОЯСА КЛИЕНТА --- */
+        function initTimezone() {
+            try {
+                // Получаем полный системный пояс (например "Europe/Moscow")
+                const tzFull = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                
+                // Получаем короткую аббревиатуру (например "MSK" или "GMT+3")
+                const formatter = new Intl.DateTimeFormat('ru-RU', { timeZoneName: 'short' });
+                const tzParts = formatter.formatToParts(new Date());
+                const tzShortObj = tzParts.find(p => p.type === 'timeZoneName');
+                
+                // Если браузер не смог дать короткое имя, берем город (Moscow)
+                const tzShort = tzShortObj ? tzShortObj.value : tzFull.split('/').pop();
+                
+                const tzElement = document.getElementById('user-tz');
+                if (tzElement) {
+                    tzElement.innerText = `🕒 ${tzShort}`;
+                    // В title зашиваем подсказку, которая появится при наведении
+                    tzElement.title = `Системный часовой пояс: ${tzFull}\n()`;
+                }
+            } catch (e) {
+                console.error("Не удалось определить часовой пояс:", e);
+                document.getElementById('user-tz').style.display = 'none';
+            }
+        }
+
+        // Запускаем как только страница загрузится
+        document.addEventListener('DOMContentLoaded', initTimezone);
 
         /* --- ОСНОВНЫЕ ФУНКЦИИ --- */
-       function clearList() {
+        function clearList() {
             if(isProcessing) return;
             document.querySelector('.search-container').style.display = 'none';
             

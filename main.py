@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from urllib.parse import quote, unquote
 
 from groq import Groq
@@ -179,14 +180,39 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
 async def get_games_batch(payload: BatchRequest):
     return StreamingResponse(game_generator(payload), media_type="application/x-ndjson")
 
+def get_latest_steam_update_time() -> datetime:
+    """
+    Рассчитывает точное время последнего глобального обновления цен в Steam.
+    Steam обновляется в 10:00 AM по времени Сиэтла (Pacific Time).
+    Мы используем 10:10 AM для запаса.
+    """
+    # 1. Получаем текущее время в часовом поясе серверов Steam (с учетом зима/лето)
+    pt_zone = ZoneInfo("America/Los_Angeles")
+    now_pt = datetime.now(pt_zone)
+    
+    # 2. Формируем "сегодня в 10:10 утра" по их времени
+    update_time_pt = now_pt.replace(hour=10, minute=10, second=0, microsecond=0)
+    
+    # 3. Если у них сейчас еще нет 10:10 утра, значит последнее обновление было ВЧЕРА
+    if now_pt < update_time_pt:
+        update_time_pt -= timedelta(days=1)
+        
+    # 4. Переводим это время в "локальное время нашего сервера" (наивное), 
+    # так как в базу данных last_updated мы сохраняли через простой datetime.now()
+    local_aware = update_time_pt.astimezone() 
+    local_naive = local_aware.replace(tzinfo=None)
+    
+    return local_naive
+
 # --- ГЕНЕРАТОР (Который у вас отсутствовал) ---
 
 async def game_generator(payload: BatchRequest):
     ids = payload.steam_ids
     playtimes = payload.playtimes
     names_map = payload.game_names
-    # Считаем данные устаревшими через 24 часа
-    cutoff = datetime.now() - timedelta(hours=24)
+    
+    # Получаем точную границу последнего обновления магазина Steam (10:10 PT)
+    cutoff = get_latest_steam_update_time()
 
     # 1. Сначала отдаем ВСЁ, что есть в БД (это происходит мгновенно)
     with Session(engine) as session:
@@ -196,8 +222,15 @@ async def game_generator(payload: BatchRequest):
         needed_from_steam = []
         for sid in ids:
             game = existing_map.get(sid)
-            # Если игра есть в базе и обновлялась недавно — отдаем сразу
-            if game and game.last_updated > cutoff:
+            
+            # УСЛОВИЯ ИСПОЛЬЗОВАНИЯ КЭША:
+            # 1. Игра есть в базе
+            # 2. Время обновления свежее (после последнего рестарта магазина Steam)
+            # 3. Жанры не None (если None, значит старая запись без жанров, надо обновить)
+            is_fresh = game and game.last_updated > cutoff
+            has_genres = game and game.genres is not None
+            
+            if is_fresh and has_genres:
                 d = game.model_dump()
                 if d.get('last_updated'): d['last_updated'] = d['last_updated'].isoformat()
                 d['playtime_forever'] = playtimes.get(sid, 0)
