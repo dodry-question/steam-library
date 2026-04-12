@@ -737,7 +737,7 @@
                 if (tzElement) {
                     tzElement.innerText = `🕒 ${tzShort}`;
                     // В title зашиваем подсказку, которая появится при наведении
-                    tzElement.title = `Системный часовой пояс: ${tzFull}\n()`;
+                    tzElement.title = `Системный часовой пояс: ${tzFull}\n`;
                 }
             } catch (e) {
                 console.error("Не удалось определить часовой пояс:", e);
