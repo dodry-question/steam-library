@@ -664,10 +664,11 @@
                 <button onclick="loadLibrary()" class="btn-load btn-pulse-green">🎮 Загрузить мои игры</button>
                 <span style="color: #697885; font-size: 14px;">или введи ID друга в поиске сверху ☝️</span>
             {% else %}
-                <a href="/login" class="btn-steam" style="font-size: 16px; padding: 12px 24px;">
+                <!-- ТЕПЕРЬ ЭТА КНОПКА ТОЖЕ ВЫЗЫВАЕТ МОДАЛЬНОЕ ОКНО -->
+                <button onclick="openAuthModal()" class="btn-steam" style="font-size: 16px; padding: 12px 24px; cursor: pointer;">
                     <div class="steam-icon"></div>
-                    Войти через Steam
-                </a>
+                    Sign in
+                </button>
                 <span style="color: #697885; font-size: 14px;">чтобы увидеть свою статистику и получить AI-советы</span>
             {% endif %}
         </div>
