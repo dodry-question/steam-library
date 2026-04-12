@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Моя Библиотека</title>
     <link rel="icon" type="image/png" href="/static/favicon.png?v=7">
     <style>
@@ -369,6 +370,74 @@
         }
         .mood-item:hover { background: #6b2cf5; color: white; }
         .mood-item.active { background: #2a3f5a; color: #66c0f4; }
+         @media (max-width: 768px) {
+            /* Уменьшаем отступы по краям экрана */
+            body { padding: 15px; }
+
+            /* Шапка: выстраиваем элементы в колонку */
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+                align-items: stretch;
+            }
+            h1 { text-align: center; }
+            #copy-btn { position: absolute; right: 20px; top: 20px; } /* Иконка копирования справа */
+
+            /* Поисковик на всю ширину */
+            .search-container {
+                max-width: 100%;
+                margin: 0;
+            }
+
+            /* Профиль пользователя по центру */
+            .user-profile { justify-content: center; }
+            .user-info-col { text-align: right; }
+
+            /* Панель управления (кнопки сортировки, ИИ, поиск друга) */
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 15px;
+                position: static; /* Убираем залипание на мобилках, чтобы не съедало пол экрана */
+            }
+            .controls > div:first-child {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            .controls-right {
+                margin-left: 0;
+                flex-direction: column;
+                width: 100%;
+            }
+            .controls-right > div {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            /* Кнопка ИИ на всю ширину для удобного нажатия пальцем */
+            .ai-split-container { width: 100%; }
+            .btn-ai-main { flex-grow: 1; text-align: center; }
+            .mood-menu { right: auto; left: 0; width: 100%; } /* Меню настроений не вылезает за край */
+
+            /* Поле поиска по ID растягиваем */
+            .input-friend { flex-grow: 1; width: auto !important; }
+
+            /* Карточки игр и витрина: растягиваем по ширине телефона */
+            .gallery { justify-content: center; gap: 15px; }
+            .card { 
+                width: 100%; 
+                max-width: 350px; /* Чтобы на планшетах не были слишком огромными */
+            }
+            .ai-gallery { justify-content: center; }
+            .ai-gallery .card { width: 100% !important; max-width: 350px; }
+
+            /* Пустой экран (витрина фишек) */
+            .empty-state { margin-top: 20px; }
+            .empty-title { font-size: 24px; }
+            .features-grid { gap: 15px; }
+            .feature-card { width: 100%; max-width: 350px; padding: 20px 15px; }
+        }
     </style>
 </head>
 <body>
