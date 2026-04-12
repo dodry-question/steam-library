@@ -12,7 +12,8 @@ from urllib.parse import quote, unquote
 
 from groq import Groq
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, Request, Form, Body
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -587,19 +588,73 @@ def logout():
     r.delete_cookie("user_avatar")
     return r
 
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ДАННЫХ ПРОФИЛЯ ---
+async def fetch_steam_profile(steam_id: str):
+    api_url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={STEAM_API_KEY}&steamids={steam_id}"
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(api_url, timeout=5.0)
+            if resp.status_code == 200:
+                players = resp.json().get('response', {}).get('players')
+                if players:
+                    return players[0]
+        except Exception:
+            pass
+    return None
+
+# --- ОБНОВЛЕННАЯ ГЛАВНАЯ СТРАНИЦА (ОБНОВЛЯЕТ АВАТАР И НИК) ---
 @app.get("/")
-def index(request: Request):
+async def index(request: Request):
     uid = request.cookies.get("user_steam_id")
-    # Добавляем "or ''", чтобы вместо None всегда была пустая строка
     uname = unquote(request.cookies.get("user_name") or "")
     uavatar = request.cookies.get("user_avatar") or "" 
     
-    return templates.TemplateResponse("index.html", {
+    # Если пользователь авторизован, тихонько запрашиваем свежие данные у Steam
+    if uid:
+        fresh_profile = await fetch_steam_profile(uid)
+        if fresh_profile:
+            uname = fresh_profile.get('personaname', uname)
+            uavatar = fresh_profile.get('avatarfull') or fresh_profile.get('avatarmedium') or uavatar
+
+    response = templates.TemplateResponse("index.html", {
         "request": request, 
         "user_id": uid, 
         "user_name": uname, 
         "user_avatar": uavatar
     })
+
+    # Перезаписываем куки со свежей аватаркой и ником
+    if uid:
+        response.set_cookie("user_name", quote(uname), max_age=2592000)
+        response.set_cookie("user_avatar", uavatar, max_age=2592000)
+
+    return response
+
+# --- НОВЫЙ РОУТ ДЛЯ ВХОДА ПО ССЫЛКЕ ---
+@app.post("/auth-url")
+async def auth_url(data: dict = Body(...)):
+    url_or_id = data.get("url", "").strip()
+    if not url_or_id:
+        return JSONResponse({"error": "Пустая ссылка"})
+
+    steam_id = await resolve_steam_id(url_or_id)
+    if not steam_id:
+        return JSONResponse({"error": "Не удалось найти профиль по этой ссылке"})
+
+    profile = await fetch_steam_profile(steam_id)
+    if not profile:
+        return JSONResponse({"error": "Профиль найден, но скрыт настройками приватности"})
+
+    uname = profile.get('personaname', 'Steam User')
+    uavatar = profile.get('avatarfull') or profile.get('avatarmedium')
+
+    # Устанавливаем куки как при обычной авторизации
+    response = JSONResponse({"success": True})
+    response.set_cookie("user_steam_id", steam_id, max_age=2592000)
+    response.set_cookie("user_name", quote(uname), max_age=2592000)
+    response.set_cookie("user_avatar", uavatar, max_age=2592000)
+
+    return response
 
 ## if __name__ == "__main__":
     import uvicorn

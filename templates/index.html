@@ -369,6 +369,39 @@
         }
         .mood-item:hover { background: #6b2cf5; color: white; }
         .mood-item.active { background: #2a3f5a; color: #66c0f4; }
+        /* --- МОДАЛЬНОЕ ОКНО АВТОРИЗАЦИИ --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(5px);
+            display: none; justify-content: center; align-items: center; z-index: 9999;
+            animation: fadeIn 0.3s ease-out;
+        }
+        .modal-content {
+            background: #171a21; border: 1px solid #3e464e; padding: 25px;
+            border-radius: 8px; max-width: 400px; width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8); position: relative;
+        }
+        .modal-close {
+            position: absolute; top: 15px; right: 15px; color: #8f98a0;
+            cursor: pointer; font-size: 20px; transition: 0.2s;
+        }
+        .modal-close:hover { color: white; }
+        .modal-content h3 { margin-top: 0; color: white; font-size: 20px; }
+        .modal-text { color: #8f98a0; font-size: 13px; line-height: 1.5; margin-bottom: 20px; }
+        
+        .modal-divider {
+            display: flex; align-items: center; text-align: center; color: #454d58; margin: 20px 0; font-size: 12px;
+        }
+        .modal-divider::before, .modal-divider::after {
+            content: ''; flex: 1; border-bottom: 1px solid #2a3f5a;
+        }
+        .modal-divider:not(:empty)::before { margin-right: 15px; }
+        .modal-divider:not(:empty)::after { margin-left: 15px; }
+
+        .auth-input-group { display: flex; flex-direction: column; gap: 10px; }
+        .auth-input { padding: 10px; border-radius: 4px; border: 1px solid #3e464e; background: #1b2128; color: white; width: 100%; box-sizing: border-box;}
+        .btn-auth-url { background: #2a3f5a; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-auth-url:hover { background: #66c0f4; color: #1b2838; }
         /* ========================================= */
         /* --- АДАПТАЦИЯ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ --- */
         /* ========================================= */
@@ -411,6 +444,10 @@
                 justify-content: flex-end; /* Профиль строго справа */
             } 
             .user-info-col { text-align: right; }
+            
+            .user-profile, .login-wrapper { 
+                width: auto; flex-shrink: 0; margin-left: auto;
+            }
             
             /* Поиск падает на новую строку */
             .search-container {
@@ -531,6 +568,7 @@
         <!-- ПРОФИЛЬ -->
         {% if user_id %}
             <div class="user-profile">
+                <!-- Оставлен ваш текущий код профиля -->
                 <div class="user-info-col">
                     <span class="user-name">{{ user_name }}</span>
                     <a href="/logout" class="btn-logout">Выйти</a>
@@ -540,14 +578,14 @@
                 </div>
             </div>
         {% else %}
-            <div style="margin-left: auto;">
-                <a href="/login" class="btn-steam">
-                    <div class="steam-icon"></div>
-                    Sign in through Steam
-                </a>
+            <!-- КОМПАКТНАЯ КНОПКА ВОЙТИ -->
+            <div class="login-wrapper">
+                <button onclick="openAuthModal()" class="btn-steam">
+                    <div class="steam-icon"></div> Sign in
+                </button>
             </div>
         {% endif %}
-    </div>
+    </div> 
 
     <!-- ПАНЕЛЬ УПРАВЛЕНИЯ -->
     <div class="controls" style="display: flex; justify-content: space-between; align-items: center;">
@@ -635,6 +673,32 @@
         </div>
     </div>
     <div class="gallery" id="container"></div>
+
+    <!-- МОДАЛЬНОЕ ОКНО АВТОРИЗАЦИИ -->
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeAuthModal()">✖</span>
+            <h3>Способ входа</h3>
+            
+            <a href="/login" class="btn-steam" style="width: 100%; justify-content: center; box-sizing: border-box; padding: 12px;">
+                <div class="steam-icon"></div> Быстрый вход через Steam
+            </a>
+            
+            <div class="modal-divider">ИЛИ ВВЕДИТЕ ССЫЛКУ</div>
+            
+            <p class="modal-text">
+                <b>В чем разница?</b><br>
+                Официальный вход (OpenID) гарантирует, что это ваш аккаунт. Вход по ссылке просто «привязывает» публичный профиль к браузеру.
+                <br><br><i>В обоих случаях ваш профиль и игры в Steam должны быть открыты настройками приватности.</i>
+            </p>
+
+            <div class="auth-input-group">
+                <input type="text" id="auth-url-input" class="auth-input" placeholder="https://steamcommunity.com/id/ваш_ник">
+                <button onclick="loginWithUrl()" class="btn-auth-url" id="auth-url-btn">Привязать профиль</button>
+                <div id="auth-error" style="color: #ff5c5c; font-size: 12px; display: none;"></div>
+            </div>
+        </div>
+    </div>
 
     <script>
         let loadedGames = [];
@@ -812,6 +876,54 @@ function toggleGameSelection(gameName, cardElement) {
 
     updateAiButtonState(); // Вызывает появление/скрытие панели
 }
+
+/* --- ЛОГИКА АВТОРИЗАЦИИ ПО ССЫЛКЕ --- */
+        function openAuthModal() {
+            document.getElementById('auth-modal').style.display = 'flex';
+        }
+
+        function closeAuthModal() {
+            document.getElementById('auth-modal').style.display = 'none';
+        }
+
+        async function loginWithUrl() {
+            const input = document.getElementById('auth-url-input').value.trim();
+            const errorDiv = document.getElementById('auth-error');
+            const btn = document.getElementById('auth-url-btn');
+
+            if (!input) {
+                errorDiv.innerText = "Пожалуйста, введите ссылку";
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            btn.innerText = "Проверка...";
+            btn.disabled = true;
+            errorDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/auth-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: input })
+                });
+                
+                const data = await response.json();
+
+                if (data.success) {
+                    window.location.reload(); // Перезагружаем страницу при успехе
+                } else {
+                    errorDiv.innerText = data.error || "Произошла ошибка";
+                    errorDiv.style.display = 'block';
+                }
+            } catch (e) {
+                errorDiv.innerText = "Ошибка соединения с сервером";
+                errorDiv.style.display = 'block';
+            } finally {
+                btn.innerText = "Привязать профиль";
+                btn.disabled = false;
+            }
+        }
 
 function updateAiButtonState() {
     const mainAiBtn = document.getElementById('main-ai-btn'); // Текст левой части новой кнопки
