@@ -157,8 +157,7 @@
         .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #66c0f4; border-top-color: transparent; border-radius: 50%; animation: spin 1s infinite; margin-right: 8px; vertical-align: text-bottom; }
         @keyframes spin { to { transform: rotate(360deg); } }
                 /* --- НОВЫЙ ПОИСКОВИК (В ШАПКЕ) --- */
-        .search-container { display: flex; align-items: center; max-width: 400px; width: 100%; margin: 0 20px; }
-        .search-input { width: 100%; padding: 10px 15px; border-radius: 4px 0 0 4px; border: 1px solid #3e464e; background: #1b2128; color: white; outline: none; transition: 0.2s; font-family: inherit; font-size: 14px; }
+        .search-container { display: none; align-items: center; max-width: 400px; width: 100%; margin: 0 20px; }        .search-input { width: 100%; padding: 10px 15px; border-radius: 4px 0 0 4px; border: 1px solid #3e464e; background: #1b2128; color: white; outline: none; transition: 0.2s; font-family: inherit; font-size: 14px; }
         .search-input:focus { border-color: #66c0f4; box-shadow: inset 0 0 5px rgba(102, 192, 244, 0.2); }
         .search-btn { padding: 10px 16px; border-radius: 0 4px 4px 0; background: #2a3f5a; border: 1px solid #2a3f5a; color: white; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; }
         .search-btn:hover { background: #66c0f4; border-color: #66c0f4; color: #1b2838; }
@@ -370,73 +369,144 @@
         }
         .mood-item:hover { background: #6b2cf5; color: white; }
         .mood-item.active { background: #2a3f5a; color: #66c0f4; }
-         @media (max-width: 768px) {
-            /* Уменьшаем отступы по краям экрана */
-            body { padding: 15px; }
+        /* ========================================= */
+        /* --- АДАПТАЦИЯ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ --- */
+        /* ========================================= */
+        @media (max-width: 768px) {
+            body { padding: 10px; overflow-x: hidden; }
+            * { box-sizing: border-box; }
 
-            /* Шапка: выстраиваем элементы в колонку */
-            .header {
-                flex-direction: column;
-                gap: 15px;
-                padding: 15px;
-                align-items: stretch;
+            /* --- ТОЛСТЫЙ ПОЛЗУНОК ПРОКРУТКИ ДЛЯ ТЕЛЕФОНА --- */
+            ::-webkit-scrollbar { 
+                width: 24px !important; /* Очень толстый ползунок */
             }
-            h1 { text-align: center; }
-            #copy-btn { position: absolute; right: 20px; top: 20px; } /* Иконка копирования справа */
+            ::-webkit-scrollbar-track { 
+                background: #1b2838; 
+            }
+            ::-webkit-scrollbar-thumb { 
+                background: #4a6a8a; /* Делаем светлее, чтобы было видно */
+                border-radius: 12px; 
+                border: 6px solid #1b2838; /* Отступ внутри полосы */
+            }
+            ::-webkit-scrollbar-thumb:active { 
+                background: #66c0f4; /* Голубой при касании */
+            }
 
-            /* Поисковик на всю ширину */
+            /* --- ШАПКА (Название слева, Профиль справа, Поиск снизу) --- */
+            .header { 
+                flex-wrap: wrap; 
+                padding: 15px; 
+                gap: 15px; 
+            }
+            h1 { 
+                font-size: 18px; 
+                width: auto; 
+                margin: 0; 
+                flex-grow: 1; /* Выталкивает профиль вправо */
+                justify-content: flex-start; 
+            } 
+            #copy-btn { margin-left: 8px; }
+            .user-profile { 
+                width: auto; 
+                justify-content: flex-end; /* Профиль строго справа */
+            } 
+            .user-info-col { text-align: right; }
+            
+            /* Поиск падает на новую строку */
             .search-container {
-                max-width: 100%;
+                order: 3; 
+                width: 100%; 
+                max-width: 100%; 
                 margin: 0;
             }
+            .search-input { padding: 12px 15px; width: 100%; }
 
-            /* Профиль пользователя по центру */
-            .user-profile { justify-content: center; }
-            .user-info-col { text-align: right; }
+            /* Прячем текст витрины на мобилках */
+            .empty-title, .empty-subtitle { display: none; }
 
-            /* Панель управления (кнопки сортировки, ИИ, поиск друга) */
+            /* --- ПАНЕЛЬ УПРАВЛЕНИЯ --- */
             .controls {
                 flex-direction: column;
-                align-items: stretch;
-                gap: 15px;
-                position: static; /* Убираем залипание на мобилках, чтобы не съедало пол экрана */
-            }
-            .controls > div:first-child {
-                justify-content: center;
-                flex-wrap: wrap;
-            }
-            .controls-right {
-                margin-left: 0;
-                flex-direction: column;
+                padding: 12px;
+                position: sticky;
+                top: 5px;
+                z-index: 1000;
                 width: 100%;
-            }
-            .controls-right > div {
-                width: 100%;
-                justify-content: center;
+                gap: 12px;
+                box-shadow: 0 10px 20px rgba(0,0,0,0.8);
             }
             
-            /* Кнопка ИИ на всю ширину для удобного нажатия пальцем */
-            .ai-split-container { width: 100%; }
-            .btn-ai-main { flex-grow: 1; text-align: center; }
-            .mood-menu { right: auto; left: 0; width: 100%; } /* Меню настроений не вылезает за край */
-
-            /* Поле поиска по ID растягиваем */
-            .input-friend { flex-grow: 1; width: auto !important; }
-
-            /* Карточки игр и витрина: растягиваем по ширине телефона */
-            .gallery { justify-content: center; gap: 15px; }
-            .card { 
-                width: 100%; 
-                max-width: 350px; /* Чтобы на планшетах не были слишком огромными */
+            .controls > div:first-child {
+                width: 100%; flex-wrap: wrap; justify-content: space-between; gap: 8px;
             }
-            .ai-gallery { justify-content: center; }
-            .ai-gallery .card { width: 100% !important; max-width: 350px; }
+            .btn-load, .btn-sort { flex-grow: 1; text-align: center; padding: 10px 5px; }
+            .btn-clear { flex-grow: 0; padding: 10px 15px; }
+            .controls > div:first-child span { display: none; }
 
-            /* Пустой экран (витрина фишек) */
-            .empty-state { margin-top: 20px; }
-            .empty-title { font-size: 24px; }
-            .features-grid { gap: 15px; }
-            .feature-card { width: 100%; max-width: 350px; padding: 20px 15px; }
+            .controls-right {
+                width: 100% !important; flex-direction: column !important; 
+                align-items: stretch !important; margin: 0 !important; gap: 10px !important;
+            }
+
+            .ai-split-container { width: 100%; }
+            .btn-ai-main { flex-grow: 1; text-align: center; padding: 12px; }
+            .btn-ai-dropdown { padding: 12px 15px; }
+            .mood-menu { left: 0; right: auto; width: 100%; }
+
+            .controls-right > div:last-child { width: 100% !important; display: flex !important; }
+            .input-friend { flex-grow: 1; width: 100% !important; padding: 12px; }
+            .btn-friend { flex-shrink: 0; padding: 12px 20px; }
+
+            /* --- ИДЕАЛЬНАЯ TIKTOK-КАРУСЕЛЬ (ФИНАЛЬНЫЙ ФИКС) --- */
+            .empty-state { 
+                margin-top: 10px; 
+                width: 100%; 
+                overflow: hidden; 
+            }
+            .features-grid {
+                display: flex;
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                scroll-snap-type: x mandatory;
+                -webkit-overflow-scrolling: touch;
+                
+                /* ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ: отменяем центрирование! */
+                justify-content: flex-start !important; 
+                
+                width: 100%;
+                margin: 0; 
+                padding: 10px 20px 30px 20px; 
+                gap: 15px;
+                scroll-padding-left: 20px; /* Учитываем отступ при свайпе */
+            }
+            .features-grid::-webkit-scrollbar { display: none; }
+            .features-grid { -ms-overflow-style: none; scrollbar-width: none; }
+
+            .feature-card {
+                flex: 0 0 82%; 
+                scroll-snap-align: start; 
+                padding: 20px 15px;
+            }
+
+            .feature-card:last-child {
+                position: relative;
+            }
+            .feature-card:last-child::after {
+                content: "";
+                position: absolute;
+                right: -20px;
+                top: 0;
+                width: 20px;
+                height: 1px;
+            }
+
+            .empty-cta { padding: 0 20px; width: 100%; }
+            .empty-cta .btn-steam { width: 100%; justify-content: center; }
+            .empty-cta .btn-load { width: 100%; }
+
+            /* --- КАРТОЧКИ ИГР --- */
+            .gallery, .ai-gallery { justify-content: center; }
+            .card { width: 100%; max-width: 350px; }
         }
     </style>
 </head>
@@ -577,6 +647,7 @@
         /* --- ОСНОВНЫЕ ФУНКЦИИ --- */
        function clearList() {
             if(isProcessing) return;
+            document.querySelector('.search-container').style.display = 'none';
             
             // 1. ДЕРГАЕМ СТОП-КРАН: Обрываем фоновую загрузку цен, если она идет
             if (syncController) {
@@ -672,50 +743,55 @@ function setupCardHold(cardElement, gameName) {
 
     // Обработка клика
     link.addEventListener('click', (e) => {
-        // Если зажат Shift
         if (e.shiftKey) {
-            e.preventDefault(); // Блокируем Стим
-            document.getSelection().removeAllRanges(); // Сбрасываем синее выделение текста
-            
+            e.preventDefault(); 
+            document.getSelection().removeAllRanges(); 
             isSelectionMode = true;
             toggleGameSelection(gameName, cardElement);
-            return; // Выходим из функции
+            return; 
         }
 
-        // Если режим выбора УЖЕ включен (добавляем игры простыми кликами)
         if (isSelectionMode) {
-            e.preventDefault(); // Блокируем Стим
+            e.preventDefault(); 
             if (!isLongPressFired) {
                 toggleGameSelection(gameName, cardElement);
             }
         }
-        // Если ничего не зажато и режим выключен — сработает стандартный переход в Steam!
     });
 
-    // Обработка долгого зажатия мыши или пальца
+    // Обработка долгого зажатия
     const startPress = (e) => {
-        if (e.type === 'mousedown' && e.button !== 0) return; // Только левая кнопка мыши
+        if (e.type === 'mousedown' && e.button !== 0) return; 
         isLongPressFired = false;
         
         pressTimer = setTimeout(() => {
             isLongPressFired = true;
             isSelectionMode = true;
             
+            // МАГИЯ ДЛЯ ТЕЛЕФОНОВ: Легкая вибрация при выделении (50мс)
+            if (navigator.vibrate) navigator.vibrate(50);
+            
             if (!selectedGames.has(gameName)) {
                 toggleGameSelection(gameName, cardElement);
             }
-            document.getSelection().removeAllRanges(); // Сбрасываем выделение текста
-        }, 500); // 500 мс удержания для активации
+            document.getSelection().removeAllRanges(); 
+        }, 650); // Увеличили задержку до 650мс, чтобы точно избежать случайностей
     };
 
     const cancelPress = () => clearTimeout(pressTimer);
 
-    // Вешаем слушатели
+    // Слушатели старта удержания
     link.addEventListener('mousedown', startPress);
-    link.addEventListener('touchstart', startPress);
+    link.addEventListener('touchstart', startPress, {passive: true});
+    
+    // Слушатели отмены (если отпустил палец или убрал курсор)
     link.addEventListener('mouseup', cancelPress);
     link.addEventListener('mouseleave', cancelPress);
     link.addEventListener('touchend', cancelPress);
+    
+    // ГЛАВНАЯ ЗАЩИТА ОТ СЛУЧАЙНОСТЕЙ: Отменяем таймер, если начался скролл (движение пальца)
+    link.addEventListener('touchmove', cancelPress, {passive: true});
+    link.addEventListener('mousemove', cancelPress);
     
     // Запрещаем браузеру пытаться "тащить" карточку мышкой
     link.addEventListener('dragstart', (e) => e.preventDefault());
@@ -997,6 +1073,7 @@ async function loadLibrary(isFriend = false) {
             }));
 
             document.getElementById('copy-btn').style.display = 'inline-block';
+                document.querySelector('.search-container').style.display = 'flex';
 
             // Отрисовка базы
             statusBar.innerText = `Найдено ${total} игр. Отрисовываем...`;
