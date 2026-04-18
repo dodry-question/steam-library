@@ -438,65 +438,106 @@
             }
 
             /* --- АДАПТАЦИЯ КНОПОК ФИЛЬТРОВ И СЕТКИ --- */
-            .controls-left { width: 100%; justify-content: space-between; }
-            .desktop-separator { display: none; }
-            .text-mode { display: none; } /* Прячем текст на мобилке */
-            .icon-mode, .mobile-separator, .btn-view { display: inline-flex; justify-content: center; align-items: center; }
+            .controls-left { width: 100%; justify-content: space-between; gap: 5px; }
+            .desktop-separator { display: none !important; }
+            
+            /* Жестко переключаем текст на эмодзи */
+            .text-mode { display: none !important; } 
+            .icon-mode { display: inline-block !important; font-size: 16px; } 
+            
+            /* Разделитель между фильтрами и сеткой */
+            .mobile-separator { 
+                display: flex !important; 
+                align-items: center; 
+                color: #3e464e; 
+                padding: 0 2px; 
+                font-size: 20px; 
+            }
             
             .sort-view-group { 
                 display: flex; 
-                flex-grow: 1; /* Группа занимает всё свободное место */
-                gap: 5px; 
-                justify-content: space-between;
-                margin-left: 5px;
+                flex-grow: 1; 
+                gap: 6px; 
+                justify-content: flex-end; /* Прижимаем кнопки вправо */
             }
             
             .btn-sort, .btn-view {
-                flex: 1; /* Все 4 кнопки делят место поровну */
-                padding: 10px 0;
-                font-size: 16px;
+                padding: 10px 15px; /* Делаем кнопки квадратнее */
+                display: flex !important;
+                justify-content: center;
+                align-items: center;
             }
-            .mobile-separator { color: #454d58; padding: 0; font-size: 18px; }
 
             /* --- СЕТКА 3 В РЯД (КОМПАКТНЫЙ РЕЖИМ) --- */
             .gallery.compact-mode {
                 display: grid;
                 grid-template-columns: repeat(3, 1fr);
-                gap: 6px; /* Расстояние между плитками */
-                padding: 5px;
+                gap: 8px; /* Расстояние между плитками */
+                padding: 0;
             }
             
             .gallery.compact-mode .card {
                 width: 100%;
                 max-width: none;
-                height: 150px; /* Вертикальные карточки */
+                height: 160px; /* Вытянутые карточки */
                 margin: 0;
-                border-radius: 6px;
+                border-radius: 4px;
                 overflow: hidden;
             }
             
-            /* Растягиваем обложку на всю карточку */
             .gallery.compact-mode .card a { display: block; height: 100%; position: relative; }
             .gallery.compact-mode .card img { height: 100%; width: 100%; object-fit: cover; object-position: center; border-radius: 0; }
             
-            /* Прячем длинные названия и жанры (оставляем обложку) */
-            .gallery.compact-mode .card h2, 
+            /* Прячем только жанры. Название оставляем! */
             .gallery.compact-mode .card .genres { display: none; }
             
-            /* Время в игре (Сверху поверх картинки) */
+            /* Блок информации поверх картинки */
             .gallery.compact-mode .card .info {
                 position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 0; background: none; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none;
             }
+            
+            /* Время в игре (Сверху) */
             .gallery.compact-mode .card .playtime {
-                background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 100%);
-                color: #fff; font-size: 10px; padding: 4px 2px 12px 2px; margin: 0; text-align: center; font-weight: bold;
+                background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, transparent 100%);
+                color: #c7d5e0; font-size: 10px; padding: 6px 4px 15px 4px; margin: 0; text-align: center; font-weight: bold;
+                text-shadow: 1px 1px 2px #000; /* Читаемость на светлом фоне */
             }
             
-            /* Цена (Снизу поверх картинки) */
+            /* Блок с названием и ценой (Снизу) */
             .gallery.compact-mode .card .price-block {
                 position: absolute; bottom: 0; left: 0; width: 100%;
-                background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
-                padding: 12px 2px 4px 2px; justify-content: center;
+                /* Мощный градиент снизу вверх, чтобы текст читался идеально */
+                background: linear-gradient(to top, rgba(16, 18, 22, 0.95) 0%, rgba(16, 18, 22, 0.8) 40%, transparent 100%);
+                padding: 25px 6px 8px 6px; /* Сверху отступ больше для плавности градиента */
+                display: flex;
+                flex-direction: column; /* Элементы в столбик */
+                align-items: flex-start; /* Прижимаем к левому краю */
+                box-sizing: border-box;
+            }
+            
+            /* Скрываем зеленую плашку скидки для чистоты */
+            .gallery.compact-mode .card .price-block .discount-badge { display: none; } 
+            
+            /* НАЗВАНИЕ ИГРЫ */
+            .gallery.compact-mode .card h2 {
+                display: block;
+                font-size: 11px;
+                color: #ffffff;
+                margin: 0 0 2px 0;
+                width: 100%;
+                text-align: left;
+                white-space: nowrap; /* В одну строку */
+                overflow: hidden; /* Скрываем лишнее */
+                text-overflow: ellipsis; /* Добавляем троеточие */
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.9); /* Жесткая тень для контраста */
+                font-weight: bold;
+            }
+
+            /* ЦЕНА ИГРЫ */
+            .gallery.compact-mode .card .price { 
+                font-size: 11px; 
+                text-align: left; 
+                text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
             }
             .gallery.compact-mode .card .price-block .discount-badge { display: none; } /* Скрываем зеленую плашку, чтобы не мусорить */
             .gallery.compact-mode .card .price { font-size: 11px; text-align: center; }
@@ -1593,13 +1634,6 @@ function updateCardDetails(game) {
                     btnCompact.classList.remove('active');
                 }
             }
-
-            // Автоматически включаем "3 в ряд", если человек зашел с телефона
-            window.addEventListener('DOMContentLoaded', () => {
-                if (window.innerWidth <= 768) {
-                    setMobileView('compact');
-                }
-            });
             
     </script>
 </body>
