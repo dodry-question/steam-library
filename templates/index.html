@@ -846,13 +846,20 @@ let pressTimer;
 
 function setupCardHold(cardElement, gameName) {
     const link = cardElement.querySelector('a');
-    let isLongPressFired = false;
     let pressTimer;
     let startX = 0;
     let startY = 0;
+    let isDragging = false;
+    let justLongPressed = false; // Флаг: было ли только что долгое нажатие
 
-    // Обработка клика
+    // 1. УПРАВЛЕНИЕ КЛИКОМ (Перехват фантомных кликов)
     link.addEventListener('click', (e) => {
+        // Если мы только что сделали долгий тап - убиваем этот клик!
+        if (justLongPressed) {
+            e.preventDefault();
+            return;
+        }
+
         if (e.shiftKey) {
             e.preventDefault(); 
             document.getSelection().removeAllRanges(); 
@@ -861,66 +868,75 @@ function setupCardHold(cardElement, gameName) {
             return; 
         }
 
+        // Если мы УЖЕ в режиме выделения - любой обычный клик выделяет/снимает выделение
         if (isSelectionMode) {
             e.preventDefault(); 
-            if (!isLongPressFired) {
-                toggleGameSelection(gameName, cardElement);
-            }
+            toggleGameSelection(gameName, cardElement);
         }
     });
 
-    // Обработка начала нажатия
+    // 2. СТАРТ НАЖАТИЯ (Палец коснулся экрана)
     const startPress = (e) => {
         if (e.type === 'mousedown' && e.button !== 0) return; 
-        isLongPressFired = false;
         
-        // Запоминаем точку касания на мобильном (чтобы прощать легкое дрожание пальца)
+        isDragging = false;
+        justLongPressed = false; // Сбрасываем флаг
+
         if (e.touches && e.touches.length > 0) {
             startX = e.touches[0].clientX;
             startY = e.touches[0].clientY;
         }
         
         pressTimer = setTimeout(() => {
-            isLongPressFired = true;
+            if (isDragging) return; // Если палец ехал (скролл) - ничего не делаем
+
+            justLongPressed = true; // Запоминаем, что случился долгий тап
             isSelectionMode = true;
             
             if (navigator.vibrate) navigator.vibrate(50);
             
+            // Если карточка еще не выделена - выделяем
             if (!selectedGames.has(gameName)) {
                 toggleGameSelection(gameName, cardElement);
             }
-            document.getSelection().removeAllRanges(); 
-        }, 550); // Сделал 550мс, чтобы на телефоне ощущалось быстрее и отзывчивее
+            if (window.getSelection) window.getSelection().removeAllRanges(); 
+        }, 500); // 500ms - идеальное время для телефона
     };
 
     const cancelPress = () => clearTimeout(pressTimer);
 
-    link.addEventListener('mousedown', startPress);
-    link.addEventListener('touchstart', startPress, {passive: true});
-    
-    link.addEventListener('mouseup', cancelPress);
-    link.addEventListener('mouseleave', cancelPress);
-    
-    // Специальная обработка отпускания пальца
-    link.addEventListener('touchend', (e) => {
-        cancelPress();
-        // Задержка нужна, чтобы браузерный клик, идущий следом, 
-        // увидел, что было долгое зажатие и не открыл ссылку
-        setTimeout(() => { isLongPressFired = false; }, 300);
-    });
-    
-    // Отменяем таймер ТОЛЬКО если палец сдвинулся более чем на 15 пикселей (начался скролл)
+    // 3. ОТСЛЕЖИВАНИЕ СКРОЛЛА (Защита от случайных выделений при листании)
     link.addEventListener('touchmove', (e) => {
         if (!e.touches || e.touches.length === 0) return;
         let moveX = Math.abs(e.touches[0].clientX - startX);
         let moveY = Math.abs(e.touches[0].clientY - startY);
         
-        if (moveX > 15 || moveY > 15) {
+        // Если палец сдвинулся больше чем на 10 пикселей - это скролл
+        if (moveX > 10 || moveY > 10) {
+            isDragging = true;
             cancelPress();
         }
     }, {passive: true});
+
+    // 4. КОНЕЦ НАЖАТИЯ (Палец убрали)
+    const endPress = (e) => {
+        cancelPress();
+        // Если это был долгий тап, ждем 500мс, чтобы убить фантомный клик от мобилки,
+        // и только потом разрешаем кликать снова.
+        if (justLongPressed) {
+            setTimeout(() => { justLongPressed = false; }, 500);
+        }
+    };
+
+    // Навешиваем слушатели
+    link.addEventListener('mousedown', startPress);
+    link.addEventListener('touchstart', startPress, {passive: true});
     
-    link.addEventListener('mousemove', cancelPress);
+    link.addEventListener('mouseup', endPress);
+    link.addEventListener('touchend', endPress);
+    link.addEventListener('mouseleave', cancelPress);
+    
+    // Блокируем системные меню
     link.addEventListener('dragstart', (e) => e.preventDefault());
     link.addEventListener('contextmenu', (e) => e.preventDefault());
 }
