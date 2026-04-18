@@ -108,6 +108,7 @@
             -webkit-user-drag: none;
             -webkit-user-select: none;
             user-select: none;
+            -webkit-touch-callout: none;
         }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
         .card:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.5); border-color: #66c0f4; z-index: 10; }
@@ -899,6 +900,9 @@ function setupCardHold(cardElement, gameName) {
     
     // Запрещаем браузеру пытаться "тащить" карточку мышкой
     link.addEventListener('dragstart', (e) => e.preventDefault());
+    link.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); 
+    });
 }
 
 function toggleGameSelection(gameName, cardElement) {
