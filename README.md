@@ -12,9 +12,8 @@
 <details>
   <summary><b> Нажмите, чтобы посмотреть общий интерфейс сайта</b></summary>
   <br>
-  <img width="1913" height="937" alt="Общий интерфейс" src="https://github.com/user-attachments/assets/78474cb6-e81d-4e73-be41-74b439d7c34c" />
+  <img width="1917" height="937" alt="image" src="https://github.com/user-attachments/assets/53ca8b0c-d38a-4025-9a5f-d7f0a99c9602" />
 </details>
-
 
 ### 1. Загрузка и анализ библиотеки
 После входа (через безопасный Steam OpenID или просто по ссылке на открытый профиль) приложение вытягивает весь список ваших игр. 
@@ -22,7 +21,7 @@
 <details>
   <summary><b> Нажмите, чтобы посмотреть загруженную библиотеку</b></summary>
   <br>
-  <img width="1917" height="940" alt="Анализ библиотеки" src="https://github.com/user-attachments/assets/c0110eaa-3ef0-4fb5-a0b6-a60363ec8a03" />
+  <img width="1915" height="939" alt="image" src="https://github.com/user-attachments/assets/a05361e8-beae-4c8f-af6d-22c4a5cff751" />
 </details>
 
 
@@ -35,7 +34,7 @@
 <details>
   <summary><b> Нажмите, чтобы посмотреть работу AI Советника</b></summary>
   <br>
-  <img width="1855" height="383" alt="AI Рекомендации" src="https://github.com/user-attachments/assets/7035c202-2d84-4d51-bb8e-d98ed0c35d4b" />
+  <img width="1858" height="381" alt="image" src="https://github.com/user-attachments/assets/d148d74d-5202-4515-b3f4-9d724312b99c" />
 </details>
 
 ### 3. Мобильная адаптация
@@ -45,7 +44,7 @@
   <summary><b> Нажмите, чтобы посмотреть мобильный интерфейс</b></summary>
   <br>
   <p align="center">
-    <img src="https://github.com/user-attachments/assets/8a6d132b-f2b0-4d80-ab9d-9af9bf914702" width="350" alt="Мобильный интерфейс">
+    <img width="1080" height="2307" alt="image" src="https://github.com/user-attachments/assets/c91e6d73-2019-41b9-947b-5bfb4b4b5ae5" />
   </p>
 </details>
 
