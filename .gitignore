@@ -1,4 +1,7 @@
-.env
-games.db
 __pycache__/
+*.py[cod]
+*$py.class
 .vscode/
+.env
+*.db
+*.sqlite3
