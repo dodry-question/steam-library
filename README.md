@@ -44,7 +44,7 @@
   <summary><b> Нажмите, чтобы посмотреть мобильный интерфейс</b></summary>
   <br>
   <p align="center">
-    <img width="1080" height="2307" alt="image" src="https://github.com/user-attachments/assets/c91e6d73-2019-41b9-947b-5bfb4b4b5ae5" />
+    <img width="350" alt="Мобильный интерфейс" src="https://github.com/user-attachments/assets/c91e6d73-2019-41b9-947b-5bfb4b4b5ae5" />
   </p>
 </details>
 
