@@ -3,6 +3,7 @@
 // Глобальные переменные
 window.loadedGames = [];
 window.isProcessing = false;
+window.aiProcessing = false;
 window.currentMood = "hidden gems";
 window.currentLoadedTarget = null;
 window.syncController = null;

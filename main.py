@@ -358,9 +358,18 @@ async def recommend(request: Request):
         # НОВОЕ: Достаем историю рекомендаций
         already_recommended = body.get("already_recommended", [])
         
-        # 1. Подготовка данных: любимые игры (для основы)
-        top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:15]
-        core_names = ", ".join([g['name'] for g in top_played])
+        # 1. Подготовка данных: расширенная выборка для разнообразия
+        # Берем топ-10 по времени + 10 случайных из топ-100 для разнообразия
+        top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)
+        top_10 = top_played[:10]
+
+        # Добавляем случайные игры из топ-100 (исключая топ-10)
+        import random
+        candidates = top_played[10:100] if len(top_played) > 10 else []
+        random_picks = random.sample(candidates, min(10, len(candidates))) if candidates else []
+
+        combined = top_10 + random_picks
+        core_names = ", ".join([g['name'] for g in combined])
         
         # 2. Исключения: игры, которые уже есть (берем топ 300, чтобы не советовал их)
         exclusions = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:300]

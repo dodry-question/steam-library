@@ -167,6 +167,11 @@ async function getAI() {
         return;
     }
 
+    // Проверка: блокируем повторный запрос пока идет обработка
+    if (window.aiProcessing) {
+        return;
+    }
+
     const block = document.getElementById('ai-block');
     block.style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -194,6 +199,7 @@ async function getAI() {
     }
 
     block.innerHTML = `<span class="spinner"></span> ${loadingText}`;
+    window.aiProcessing = true; // Блокируем повторные запросы
 
     try {
         const resp = await fetch(endpoint, {
@@ -215,6 +221,7 @@ async function getAI() {
 
         if (data.content.error) {
             block.innerHTML = `<span style="color: #ffcc00;">⚠️ Сообщение от ИИ: ${data.content.error}</span>`;
+            window.aiProcessing = false; // Разблокируем при ошибке
             return;
         }
 
@@ -254,6 +261,8 @@ async function getAI() {
             html += '</div>';
             block.innerHTML = html;
 
+            window.aiProcessing = false; // Разблокируем после успешного ответа
+
             try {
                 if (typeof window.clearSelection === "function") {
                     window.clearSelection();
@@ -263,10 +272,12 @@ async function getAI() {
             }
         } else {
             block.innerHTML = 'ИИ не смог подобрать игры. Попробуйте сменить настроение.';
+            window.aiProcessing = false; // Разблокируем если нет результатов
         }
     } catch(e) {
         console.error("Детальная ошибка во фронтенде:", e);
         block.innerHTML = `<span style="color: #ff5c5c;">Ошибка: <b>${e.message}</b></span><br><span style="font-size: 12px; color: gray;">Откройте консоль браузера (F12) для деталей.</span>`;
+        window.aiProcessing = false; // Разблокируем при ошибке
     }
 }
 
