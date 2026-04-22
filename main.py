@@ -372,7 +372,7 @@ async def recommend(request: Request):
         # 3. Промпт с жестким требованием вернуть JSON
         prompt = f"""
 Ты игровой эксперт. Игрок любит эти игры: {core_names}.
-Посоветуй ровно 3 игры в Steam, которые подойдут под настроение: '{mood}'.
+Посоветуй ровно 5 игр в Steam, которые подойдут под настроение: '{mood}'. Отсортируй их по релевантности (самая подходящая первая).
 СТРОГИЕ ПРАВИЛА:
 1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
 3. Твой ответ должен быть СТРОГО в формате валидного JSON-массива, без Markdown разметки, без лишних слов.
@@ -403,7 +403,7 @@ async def recommend(request: Request):
                 json={
                     "model": "gpt-4o-mini", # Самая оптимальная по цене/качеству модель
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7
+                    "temperature": 0.85
                 },
                 timeout=40.0
             )
@@ -435,7 +435,7 @@ async def recommend(request: Request):
                         g_name = item.get("name", "")
                         based_on = item.get("based_on", "")
                         reason = item.get("reason", "")
-                        
+
                         # Ищем реальный ID игры в Steam, чтобы сделать кликабельную карточку
                         real_id = await search_steam_game(client, g_name)
                         if real_id:
@@ -446,9 +446,10 @@ async def recommend(request: Request):
                                 "ai_reason": reason,
                                 "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
                             })
-                            
+
+                    # Возвращаем только топ-3 из 5
                     if len(recs) > 0:
-                        return {"content": {"recommendations": recs}}
+                        return {"content": {"recommendations": recs[:3]}}
                     else:
                         return {"content": {"error": "ИИ посоветовал игры, но Steam не смог их найти."}}
                         
@@ -493,7 +494,7 @@ async def recommend_selected(request: Request):
 
         prompt = f"""
 Ты игровой эксперт. Игрок выбрал эти игры из своей библиотеки: {targets_str}.
-Посоветуй ровно 3 игры в Steam, которые максимально похожи на этот набор игр (по геймплею, атмосфере, жанру), учитывая настроение: '{mood}'.
+Посоветуй ровно 5 игр в Steam, которые максимально похожи на этот набор игр (по геймплею, атмосфере, жанру), учитывая настроение: '{mood}'. Отсортируй их по релевантности (самая подходящая первая).
 СТРОГИЕ ПРАВИЛА:
 1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
 3. Ответ СТРОГО в формате JSON-массива, без Markdown, без лишних слов.
@@ -513,7 +514,7 @@ async def recommend_selected(request: Request):
                 json={
                     "model": "gpt-4o-mini",
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.6 # Чуть пониже температура для большей точности
+                    "temperature": 0.85
                 },
                 timeout=40.0
             )
@@ -541,7 +542,8 @@ async def recommend_selected(request: Request):
                                 "ai_reason": reason,
                                 "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
                             })
-                    if recs: return {"content": {"recommendations": recs}}
+                    # Возвращаем только топ-3 из 5
+                    if recs: return {"content": {"recommendations": recs[:3]}}
                 except Exception as e:
                     print(f"Ошибка парсинга: {e}")
                     
