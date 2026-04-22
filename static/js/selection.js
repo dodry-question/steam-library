@@ -25,6 +25,7 @@ function setupCardHold(cardElement, gameName) {
             e.preventDefault();
             document.getSelection().removeAllRanges();
             isSelectionMode = true;
+            window.isSelectionMode = true;
             toggleGameSelection(gameName, cardElement);
             return;
         }
@@ -52,6 +53,7 @@ function setupCardHold(cardElement, gameName) {
 
             justLongPressed = true;
             isSelectionMode = true;
+            window.isSelectionMode = true;
 
             if (navigator.vibrate) navigator.vibrate(50);
 
@@ -109,6 +111,7 @@ function toggleGameSelection(gameName, cardElement) {
 
     if (selectedGames.size === 0) {
         isSelectionMode = false;
+        window.isSelectionMode = false;
     }
 
     updateAiButtonState();
@@ -131,6 +134,7 @@ function updateAiButtonState() {
 
     if (selectedGames.size > 0) {
         isSelectionMode = true;
+        window.isSelectionMode = true;
 
         if (actionPanel) {
             actionPanel.style.display = 'flex';
@@ -150,6 +154,7 @@ function updateAiButtonState() {
 
     } else {
         isSelectionMode = false;
+        window.isSelectionMode = false;
 
         if (actionPanel) {
             actionPanel.style.display = 'none';
@@ -173,6 +178,7 @@ function updateAiButtonState() {
 function clearSelection() {
     selectedGames.clear();
     isSelectionMode = false;
+    window.isSelectionMode = false;
 
     const aiPanel = document.getElementById('ai-action-panel');
     if (aiPanel) {
