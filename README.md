@@ -31,72 +31,6 @@
 - Steam Store API - информация о ценах и жанрах
 - VseGPT API (GPT-4o-mini) - генерация рекомендаций
 
-## Установка и запуск
-
-### 1. Клонирование репозитория
-
-```bash
-git clone https://github.com/dodry-question/steam-library.git
-cd steam-library
-```
-
-### 2. Установка зависимостей
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Настройка переменных окружения
-
-Создайте файл `.env` в корне проекта:
-
-```env
-STEAM_API_KEY=ваш_ключ_steam
-GROQ_API_KEY=ваш_ключ_groq
-VSEGPT_BASE_URL=https://api.vsegpt.ru/v1/chat/completions
-VSEGPT_API_KEY=ваш_ключ_vsegpt
-MY_DOMAIN=http://localhost:8000
-```
-
-**Получение API ключей:**
-- Steam API Key: https://steamcommunity.com/dev/apikey
-- Groq API Key: https://console.groq.com/
-- VseGPT API Key: https://vsegpt.ru/
-
-### 4. Запуск приложения
-
-```bash
-python main.py
-```
-
-Приложение будет доступно по адресу: http://localhost:8000
-
-## Структура проекта
-
-```
-steam-library/
-├── main.py                 # Основной файл приложения
-├── games.db               # База данных SQLite
-├── app.log                # Логи приложения
-├── requirements.txt       # Зависимости Python
-├── .env                   # Переменные окружения
-├── .gitignore            # Игнорируемые файлы
-├── static/
-│   ├── css/
-│   │   ├── main.css      # Основные стили
-│   │   ├── mobile.css    # Мобильные стили
-│   │   └── light-theme.css # Светлая тема
-│   ├── js/
-│   │   ├── app.js        # Инициализация приложения
-│   │   ├── api.js        # API запросы
-│   │   ├── ui.js         # Работа с интерфейсом
-│   │   ├── selection.js  # Выделение игр
-│   │   └── theme.js      # Переключение темы
-│   └── favicon.png       # Иконка сайта
-└── templates/
-    └── index.html        # HTML шаблон
-```
-
 ## Архитектура и принцип работы
 
 ### Система кэширования
@@ -197,6 +131,85 @@ AI_RATE_WINDOW = 60  # секунд
 - WARNING - предупреждения о потенциальных проблемах
 - ERROR - критические ошибки с полным stack trace
 
+## Известные ограничения
+
+- Steam API может временно блокировать запросы при превышении лимитов
+- Wishlist интеграция недоступна через публичный API
+- Некоторые игры могут иметь региональные ограничения по ценам
+- Требуется открытый профиль Steam для просмотра библиотеки
+
+## Лицензия
+
+MIT License
+
+---
+
+## Установка и запуск
+
+### 1. Клонирование репозитория
+
+```bash
+git clone https://github.com/dodry-question/steam-library.git
+cd steam-library
+```
+
+### 2. Установка зависимостей
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Настройка переменных окружения
+
+Создайте файл `.env` в корне проекта:
+
+```env
+STEAM_API_KEY=ваш_ключ_steam
+GROQ_API_KEY=ваш_ключ_groq
+VSEGPT_BASE_URL=https://api.vsegpt.ru/v1/chat/completions
+VSEGPT_API_KEY=ваш_ключ_vsegpt
+MY_DOMAIN=http://localhost:8000
+```
+
+**Получение API ключей:**
+- Steam API Key: https://steamcommunity.com/dev/apikey
+- Groq API Key: https://console.groq.com/
+- VseGPT API Key: https://vsegpt.ru/
+
+### 4. Запуск приложения
+
+```bash
+python main.py
+```
+
+Приложение будет доступно по адресу: http://localhost:8000
+
+## Структура проекта
+
+```
+steam-library/
+├── main.py                 # Основной файл приложения
+├── games.db               # База данных SQLite
+├── app.log                # Логи приложения
+├── requirements.txt       # Зависимости Python
+├── .env                   # Переменные окружения
+├── .gitignore            # Игнорируемые файлы
+├── static/
+│   ├── css/
+│   │   ├── main.css      # Основные стили
+│   │   ├── mobile.css    # Мобильные стили
+│   │   └── light-theme.css # Светлая тема
+│   ├── js/
+│   │   ├── app.js        # Инициализация приложения
+│   │   ├── api.js        # API запросы
+│   │   ├── ui.js         # Работа с интерфейсом
+│   │   ├── selection.js  # Выделение игр
+│   │   └── theme.js      # Переключение темы
+│   └── favicon.png       # Иконка сайта
+└── templates/
+    └── index.html        # HTML шаблон
+```
+
 ## Деплой
 
 ### Локальный запуск
@@ -221,18 +234,3 @@ VSEGPT_API_KEY=ваш_ключ
 VSEGPT_BASE_URL=https://api.vsegpt.ru/v1/chat/completions
 MY_DOMAIN=https://your-app.amvera.io
 ```
-
-## Известные ограничения
-
-- Steam API может временно блокировать запросы при превышении лимитов
-- Wishlist интеграция недоступна через публичный API
-- Некоторые игры могут иметь региональные ограничения по ценам
-- Требуется открытый профиль Steam для просмотра библиотеки
-
-## Лицензия
-
-MIT License
-
-## Контакты
-
-GitHub: https://github.com/dodry-question/steam-library
