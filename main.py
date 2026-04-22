@@ -4,12 +4,15 @@ import re
 import random
 import asyncio
 import httpx
+import logging
 from dotenv import load_dotenv
 load_dotenv(override=True)
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from urllib.parse import quote, unquote
+from collections import defaultdict
+import time
 
 from groq import Groq
 from fastapi import FastAPI, Request, Form
@@ -21,6 +24,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 # --- НАСТРОЙКИ ---
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # Загружаем и очищаем ключ от лишних пробелов и кавычек
 RAW_KEY = os.environ.get("STEAM_API_KEY") or ""
 STEAM_API_KEY = RAW_KEY.strip().replace('"', '').replace("'", "")
@@ -29,11 +43,18 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 print(f"DEBUG: Groq Key loaded: {'Yes' if GROQ_API_KEY else 'No'}")
 
 if not STEAM_API_KEY:
-    print("❌ ОШИБКА: Ключ Steam не найден!")
+    logger.error("STEAM_API_KEY не найден в переменных окружения!")
+    print("ОШИБКА: Ключ Steam не найден!")
 else:
-    print(f"✅ Ключ загружен и очищен: {STEAM_API_KEY[:5]}***")
+    logger.info(f"Steam API ключ загружен: {STEAM_API_KEY[:5]}***")
+    print(f"Ключ загружен и очищен: {STEAM_API_KEY[:5]}***")
 MY_DOMAIN = os.environ.get("MY_DOMAIN", "http://localhost:8001")
 STORE_API_LOCK = asyncio.Lock()
+
+# Rate limiting для AI запросов (максимум 10 запросов в минуту на IP)
+ai_request_tracker = defaultdict(list)
+AI_RATE_LIMIT = 10  # запросов
+AI_RATE_WINDOW = 60  # секунд
 
 # --- База данных ---
 class Game(SQLModel, table=True):
@@ -49,7 +70,15 @@ class Game(SQLModel, table=True):
 class BatchRequest(SQLModel):
     steam_ids: List[int]
     playtimes: Dict[int, int]
-    game_names: Dict[int, str] 
+    game_names: Dict[int, str]
+
+    class Config:
+        # Валидация: максимум 5000 игр за раз
+        @staticmethod
+        def validate_steam_ids(v):
+            if len(v) > 5000:
+                raise ValueError("Слишком много игр (максимум 5000)")
+            return v 
 
 sqlite_file_name = "games.db"
 connect_args = {"check_same_thread": False}
@@ -65,9 +94,15 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://librarysm-dodry.amvera.io",
+        "http://localhost:8000",
+        "http://localhost:8001",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -81,6 +116,23 @@ async def on_startup():
     create_db_and_tables()
 
 # --- Вспомогательные функции ---
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Проверяет, не превышен ли лимит AI запросов для данного IP"""
+    now = time.time()
+    # Очищаем старые запросы
+    ai_request_tracker[client_ip] = [
+        req_time for req_time in ai_request_tracker[client_ip]
+        if now - req_time < AI_RATE_WINDOW
+    ]
+
+    # Проверяем лимит
+    if len(ai_request_tracker[client_ip]) >= AI_RATE_LIMIT:
+        return False
+
+    # Добавляем текущий запрос
+    ai_request_tracker[client_ip].append(now)
+    return True
 
 async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[int]:
     search_url = "https://store.steampowered.com/api/storesearch/"
@@ -100,10 +152,11 @@ async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[in
                     item_name_clean = re.sub(r'[^\w\s]', '', item["name"]).lower()
                     if item_name_clean == clean_name:
                         return item["id"]
-                
+
                 # 2. Если точного нет, берем первый результат
                 return items[0]["id"]
-    except: pass
+    except Exception as e:
+        logger.warning(f"Ошибка поиска игры '{name}': {e}")
     return None
 
 async def request_store(client, app_id, region="ru"):
@@ -116,8 +169,10 @@ async def request_store(client, app_id, region="ru"):
         if resp.status_code == 200:
             return resp.json()
         elif resp.status_code == 429:
+            logger.warning(f"Steam API rate limit для app {app_id}")
             return "RETRY_LATER" # Специальный маркер для блокировки
-    except: 
+    except Exception as e:
+        logger.error(f"Ошибка запроса к Steam Store API для app {app_id}: {e}")
         return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_id: int):
@@ -290,6 +345,11 @@ async def game_generator(payload: BatchRequest):
 
 @app.post("/api/recommend")
 async def recommend(request: Request):
+    # Проверка rate limit
+    client_ip = request.client.host
+    if not check_rate_limit(client_ip):
+        return {"content": {"error": "Слишком много запросов. Подождите минуту и попробуйте снова."}}
+
     try:
         body = await request.json()
         all_games = body.get("games", [])
@@ -326,6 +386,7 @@ async def recommend(request: Request):
         API_KEY = os.environ.get("VSEGPT_API_KEY")
 
         if not API_KEY:
+            logger.error("VSEGPT_API_KEY не найден в .env")
             print("❌ ОШИБКА: Ключ VSEGPT_API_KEY не найден в .env")
             return {"content": {"error": "API ключ ИИ не настроен."}}
 
@@ -352,6 +413,7 @@ async def recommend(request: Request):
             # Обработка ошибок от самого сервиса VseGPT
             if "error" in result:
                 err_msg = result['error'].get('message', 'Неизвестная ошибка')
+                logger.error(f"Ошибка VseGPT API: {err_msg}")
                 print(f"⚠️ Ошибка API VseGPT: {err_msg}")
                 return {"content": {"error": "Ошибка на сервере ИИ. Проверьте консоль."}}
             
@@ -391,17 +453,24 @@ async def recommend(request: Request):
                         return {"content": {"error": "ИИ посоветовал игры, но Steam не смог их найти."}}
                         
                 except json.JSONDecodeError as e:
+                    logger.error(f"Ошибка парсинга JSON от AI: {e}\nТекст: {clean_text[:200]}")
                     print(f"❌ Ошибка парсинга JSON: {e}\nТекст был: {clean_text}")
                     return {"content": {"error": "ИИ выдал ответ в неверном формате."}}
                     
             return {"content": {"error": "Пустой ответ от ИИ."}}
 
     except Exception as e:
+        logger.error(f"Критическая ошибка в /api/recommend: {e}", exc_info=True)
         print(f"❌ Критическая ошибка ИИ: {e}")
         return {"content": {"error": str(e)}}
 
 @app.post("/api/recommend-selected")
 async def recommend_selected(request: Request):
+    # Проверка rate limit
+    client_ip = request.client.host
+    if not check_rate_limit(client_ip):
+        return {"content": {"error": "Слишком много запросов. Подождите минуту и попробуйте снова."}}
+
     try:
         body = await request.json()
         all_games = body.get("games", [])
@@ -535,7 +604,9 @@ async def resolve_steam_id(input_str: str) -> Optional[str]:
             d = resp.json()
             if d.get('response', {}).get('success') == 1:
                 return d['response']['steamid']
-        except: pass
+        except Exception as e:
+            logger.error(f"Ошибка resolve_steam_id для '{clean}': {e}")
+            pass
         
     return None
 
@@ -689,6 +760,6 @@ async def auth_url(data: dict = Body(...)):
 
     return response
 
-## if __name__ == "__main__":
+if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, proxy_headers=True, forwarded_allow_ips="*")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

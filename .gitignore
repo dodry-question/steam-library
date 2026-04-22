@@ -5,3 +5,11 @@ __pycache__/
 .env
 *.db
 *.sqlite3
+app.log
+*.log
+.DS_Store
+Thumbs.db
+node_modules/
+*.swp
+*.swo
+*~
