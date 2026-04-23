@@ -1,79 +1,16 @@
 // admin.js - Админ-панель
 
 /**
- * Открыть админ-панель
+ * Простая команда для активации админа через консоль
+ * Использование: admin("13526")
  */
-function openAdminPanel() {
-    const adminToken = localStorage.getItem('admin_token');
-
-    if (adminToken) {
-        // Проверяем валидность токена
-        fetch('/api/admin/status', {
-            headers: {
-                'X-Admin-Token': adminToken
-            }
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.is_admin) {
-                showAdminControls();
-                updateAdminStatus(data.ai_enabled);
-            } else {
-                localStorage.removeItem('admin_token');
-                showAdminLogin();
-            }
-        })
-        .catch(() => {
-            showAdminLogin();
-        });
-    } else {
-        showAdminLogin();
-    }
-
-    document.getElementById('admin-modal').style.display = 'flex';
-}
-
-/**
- * Закрыть админ-панель
- */
-function closeAdminPanel() {
-    document.getElementById('admin-modal').style.display = 'none';
-    document.getElementById('admin-login-error').style.display = 'none';
-    document.getElementById('admin-password-input').value = '';
-}
-
-/**
- * Показать форму входа
- */
-function showAdminLogin() {
-    document.getElementById('admin-login-section').style.display = 'block';
-    document.getElementById('admin-control-section').style.display = 'none';
-}
-
-/**
- * Показать панель управления
- */
-function showAdminControls() {
-    document.getElementById('admin-login-section').style.display = 'none';
-    document.getElementById('admin-control-section').style.display = 'block';
-}
-
-/**
- * Активация админа
- */
-async function activateAdmin() {
-    const password = document.getElementById('admin-password-input').value;
-    const errorEl = document.getElementById('admin-login-error');
-    const btn = document.getElementById('admin-login-btn');
-
+window.admin = async function(password) {
     if (!password) {
-        errorEl.innerText = 'Введите пароль';
-        errorEl.style.display = 'block';
+        console.log('%c❌ Использование: admin("пароль")', 'color: #ff5c5c; font-size: 14px;');
         return;
     }
 
-    btn.disabled = true;
-    btn.innerText = 'Проверка...';
+    console.log('%c⏳ Проверка пароля...', 'color: #66c0f4; font-size: 14px;');
 
     try {
         const response = await fetch('/api/admin/activate', {
@@ -88,39 +25,30 @@ async function activateAdmin() {
 
         if (data.success) {
             localStorage.setItem('admin_token', data.token);
-            errorEl.style.display = 'none';
-            showAdminControls();
+            console.log('%c✅ Админ-доступ активирован!', 'color: #5cb85c; font-size: 16px; font-weight: bold;');
+            console.log('%cТеперь используй команды:', 'color: #a0a8b0; font-size: 13px;');
+            console.log('%c  ai_on()  - включить AI для всех', 'color: #66c0f4; font-size: 13px;');
+            console.log('%c  ai_off() - отключить AI для всех (только админы)', 'color: #66c0f4; font-size: 13px;');
+            console.log('%c  ai_status() - проверить текущий статус', 'color: #66c0f4; font-size: 13px;');
 
-            // Получаем текущий статус AI
-            const statusResponse = await fetch('/api/admin/status', {
-                headers: {
-                    'X-Admin-Token': data.token
-                }
-            });
-            const statusData = await statusResponse.json();
-            updateAdminStatus(statusData.ai_enabled);
+            // Показываем текущий статус
+            await window.ai_status();
         } else {
-            errorEl.innerText = data.error || 'Неверный пароль';
-            errorEl.style.display = 'block';
+            console.log('%c❌ Неверный пароль', 'color: #ff5c5c; font-size: 14px;');
         }
     } catch (error) {
-        errorEl.innerText = 'Ошибка подключения к серверу';
-        errorEl.style.display = 'block';
-    } finally {
-        btn.disabled = false;
-        btn.innerText = 'Войти';
+        console.log('%c❌ Ошибка подключения к серверу', 'color: #ff5c5c; font-size: 14px;');
     }
-}
+};
 
 /**
- * Переключение доступа к AI
+ * Включить AI для всех
  */
-async function toggleAI(enabled) {
+window.ai_on = async function() {
     const adminToken = localStorage.getItem('admin_token');
 
     if (!adminToken) {
-        alert('Необходима авторизация');
-        showAdminLogin();
+        console.log('%c❌ Сначала активируй админ-доступ: admin("пароль")', 'color: #ff5c5c; font-size: 14px;');
         return;
     }
 
@@ -132,56 +60,106 @@ async function toggleAI(enabled) {
             },
             body: JSON.stringify({
                 token: adminToken,
-                enabled: enabled
+                enabled: true
             })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            updateAdminStatus(data.enabled);
+            console.log('%c✅ AI включен для всех пользователей', 'color: #5cb85c; font-size: 14px; font-weight: bold;');
         } else {
-            alert(data.error || 'Ошибка при изменении настроек');
+            console.log('%c❌ ' + (data.error || 'Ошибка'), 'color: #ff5c5c; font-size: 14px;');
             if (data.error === 'Доступ запрещен') {
                 localStorage.removeItem('admin_token');
-                showAdminLogin();
+                console.log('%c⚠️ Токен устарел. Активируй доступ заново: admin("пароль")', 'color: #ffcc00; font-size: 13px;');
             }
         }
     } catch (error) {
-        alert('Ошибка подключения к серверу');
+        console.log('%c❌ Ошибка подключения к серверу', 'color: #ff5c5c; font-size: 14px;');
     }
-}
+};
 
 /**
- * Обновление статуса AI
+ * Отключить AI для всех (только админы)
  */
-function updateAdminStatus(enabled) {
-    const statusEl = document.getElementById('admin-status');
+window.ai_off = async function() {
+    const adminToken = localStorage.getItem('admin_token');
 
-    if (enabled) {
-        statusEl.innerHTML = '<strong style="color: #5cb85c;">✓ AI доступен для всех пользователей</strong><br><span style="font-size: 12px;">Любой может получать рекомендации</span>';
-    } else {
-        statusEl.innerHTML = '<strong style="color: #d9534f;">✗ AI доступен только админам</strong><br><span style="font-size: 12px;">Обычные пользователи не могут использовать AI</span>';
+    if (!adminToken) {
+        console.log('%c❌ Сначала активируй админ-доступ: admin("пароль")', 'color: #ff5c5c; font-size: 14px;');
+        return;
     }
-}
+
+    try {
+        const response = await fetch('/api/admin/toggle-ai', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                token: adminToken,
+                enabled: false
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('%c✅ AI отключен для обычных пользователей', 'color: #5cb85c; font-size: 14px; font-weight: bold;');
+            console.log('%c⚠️ Только админы могут использовать AI', 'color: #ffcc00; font-size: 13px;');
+        } else {
+            console.log('%c❌ ' + (data.error || 'Ошибка'), 'color: #ff5c5c; font-size: 14px;');
+            if (data.error === 'Доступ запрещен') {
+                localStorage.removeItem('admin_token');
+                console.log('%c⚠️ Токен устарел. Активируй доступ заново: admin("пароль")', 'color: #ffcc00; font-size: 13px;');
+            }
+        }
+    } catch (error) {
+        console.log('%c❌ Ошибка подключения к серверу', 'color: #ff5c5c; font-size: 14px;');
+    }
+};
 
 /**
- * Обработка Enter в поле пароля
+ * Проверить статус AI
  */
-document.addEventListener('DOMContentLoaded', function() {
-    const passwordInput = document.getElementById('admin-password-input');
-    if (passwordInput) {
-        passwordInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                activateAdmin();
+window.ai_status = async function() {
+    const adminToken = localStorage.getItem('admin_token');
+
+    if (!adminToken) {
+        console.log('%c⚠️ Админ-доступ не активирован', 'color: #ffcc00; font-size: 14px;');
+        console.log('%cДля активации используй: admin("пароль")', 'color: #a0a8b0; font-size: 13px;');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/status', {
+            headers: {
+                'X-Admin-Token': adminToken
             }
         });
-    }
-});
 
-// Экспортируем функции в глобальную область
-window.openAdminPanel = openAdminPanel;
-window.closeAdminPanel = closeAdminPanel;
-window.activateAdmin = activateAdmin;
-window.toggleAI = toggleAI;
+        const data = await response.json();
+
+        if (data.is_admin) {
+            console.log('%c📊 Статус AI:', 'color: #66c0f4; font-size: 14px; font-weight: bold;');
+            if (data.ai_enabled) {
+                console.log('%c  ✅ Включен для всех пользователей', 'color: #5cb85c; font-size: 13px;');
+            } else {
+                console.log('%c  ❌ Отключен для обычных пользователей', 'color: #ff5c5c; font-size: 13px;');
+                console.log('%c  ⚠️ Доступен только админам', 'color: #ffcc00; font-size: 13px;');
+            }
+        } else {
+            console.log('%c❌ Токен недействителен', 'color: #ff5c5c; font-size: 14px;');
+            localStorage.removeItem('admin_token');
+            console.log('%c⚠️ Активируй доступ заново: admin("пароль")', 'color: #ffcc00; font-size: 13px;');
+        }
+    } catch (error) {
+        console.log('%c❌ Ошибка подключения к серверу', 'color: #ff5c5c; font-size: 14px;');
+    }
+};
+
+// Приветственное сообщение при загрузке страницы
+console.log('%c🔐 Админ-панель Steam Library Manager', 'color: #66c0f4; font-size: 16px; font-weight: bold;');
+console.log('%cДля активации используй: admin("пароль")', 'color: #a0a8b0; font-size: 13px;');
+

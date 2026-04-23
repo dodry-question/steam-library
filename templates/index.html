@@ -162,32 +162,6 @@
         </div>
     </div>
 
-    <!-- МОДАЛЬНОЕ ОКНО АДМИН-ПАНЕЛИ -->
-    <div id="admin-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content" style="max-width: 400px;">
-            <span class="modal-close" onclick="closeAdminPanel()">✖</span>
-            <h3>Админ-панель</h3>
-
-            <div id="admin-login-section">
-                <p class="modal-text">Введите пароль для доступа к панели управления:</p>
-                <div class="auth-input-group">
-                    <input type="password" id="admin-password-input" class="auth-input" placeholder="Пароль">
-                    <button onclick="activateAdmin()" class="btn-auth-url" id="admin-login-btn">Войти</button>
-                </div>
-                <div id="admin-login-error" style="color: #ff5c5c; font-size: 12px; margin-top: 8px; display: none;"></div>
-            </div>
-
-            <div id="admin-control-section" style="display: none;">
-                <p class="modal-text">Управление доступом к AI рекомендациям:</p>
-                <div style="display: flex; gap: 10px; margin-top: 15px;">
-                    <button onclick="toggleAI(true)" class="btn-friend" style="flex: 1; background: #5cb85c;">Включить для всех</button>
-                    <button onclick="toggleAI(false)" class="btn-friend" style="flex: 1; background: #d9534f;">Только для админов</button>
-                </div>
-                <div id="admin-status" style="margin-top: 15px; padding: 10px; background: #1e232d; border-radius: 4px; font-size: 13px; color: #a0a8b0;"></div>
-            </div>
-        </div>
-    </div>
-
     <!-- JavaScript модули -->
     <script src="/static/js/selection.js"></script>
     <script src="/static/js/ui.js"></script>
