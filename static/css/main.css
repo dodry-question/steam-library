@@ -423,6 +423,61 @@ h2 {
     visibility: visible;
 }
 
+/* --- AI ПОИСК (INPUT GROUP) --- */
+.ai-input-group {
+    display: flex;
+    align-items: center;
+    background: #222b35;
+    border: 1px solid #4a5568;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+    margin-right: 15px;
+}
+
+.ai-input-group:focus-within {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.ai-input-group input {
+    flex: 1;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: white;
+    outline: none;
+    font-family: inherit;
+    font-size: 13px;
+    min-width: 220px;
+}
+
+.ai-input-group input::placeholder {
+    color: #697885;
+}
+
+.btn-ai-search {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-ai-search:hover {
+    opacity: 0.9;
+    transform: scale(1.02);
+}
+
+.btn-ai-search:active {
+    transform: scale(0.98);
+}
+
 /* --- ЕДИНАЯ ПАНЕЛЬ ИИ --- */
 #ai-block {
     display: none;
