@@ -46,8 +46,9 @@ print(f"DEBUG: Groq Key loaded: {'Yes' if GROQ_API_KEY else 'No'}")
 
 # Админ настройки
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "13526")
-ADMIN_TOKENS_FILE = "admin_tokens.json"
-AI_CONFIG_FILE = "ai_config.json"
+DATA_DIR = "/data" if os.path.exists("/data") else "."
+ADMIN_TOKENS_FILE = os.path.join(DATA_DIR, "admin_tokens.json")
+AI_CONFIG_FILE = os.path.join(DATA_DIR, "ai_config.json")
 
 # Загрузка админ токенов
 admin_tokens: Set[str] = set()
@@ -418,9 +419,9 @@ def sanitize_custom_query(query: Optional[str]) -> Optional[str]:
 @app.post("/api/recommend")
 async def recommend(request: Request):
     # Проверка прав доступа к AI
-    admin_token = request.headers.get("X-Admin-Token")
+    session_token = request.headers.get("X-Session-Token")
     if not ai_config.get("enabled_for_all", True):
-        if not is_admin(admin_token):
+        if not is_admin(session_token):
             return {"content": {"error": "AI рекомендации временно недоступны"}}
 
     # Проверка rate limit
@@ -584,9 +585,9 @@ async def recommend(request: Request):
 @app.post("/api/recommend-selected")
 async def recommend_selected(request: Request):
     # Проверка прав доступа к AI
-    admin_token = request.headers.get("X-Admin-Token")
+    session_token = request.headers.get("X-Session-Token")
     if not ai_config.get("enabled_for_all", True):
-        if not is_admin(admin_token):
+        if not is_admin(session_token):
             return {"content": {"error": "AI рекомендации временно недоступны"}}
 
     # Проверка rate limit
@@ -771,11 +772,11 @@ async def add_game_manual(steam_id: int = Form(...)):
         return json.loads(item)
     return {"error": "Не удалось загрузить"}
 
-# --- АДМИН API ---
+# --- DEBUG API ---
 
-@app.post("/api/admin/activate")
-async def activate_admin(request: Request):
-    """Активация админ-токена (двойной клик на логотип)"""
+@app.post("/api/auth/verify")
+async def verify_auth(request: Request):
+    """Authentication verification"""
     try:
         body = await request.json()
         password = body.get("password", "")
@@ -788,15 +789,15 @@ async def activate_admin(request: Request):
         admin_tokens.add(token)
         save_admin_tokens()
 
-        logger.info(f"Новый админ токен создан")
+        logger.info(f"New session token created")
         return {"success": True, "token": token}
     except Exception as e:
-        logger.error(f"Ошибка активации админа: {e}")
+        logger.error(f"Auth verification error: {e}")
         return {"error": "Ошибка сервера"}
 
-@app.post("/api/admin/toggle-ai")
-async def toggle_ai(request: Request):
-    """Переключение доступа AI для всех пользователей"""
+@app.post("/api/config/update")
+async def update_config(request: Request):
+    """Configuration update"""
     try:
         body = await request.json()
         admin_token = body.get("token", "")
@@ -808,24 +809,24 @@ async def toggle_ai(request: Request):
         ai_config["enabled_for_all"] = enabled
         save_ai_config()
 
-        status = "включен" if enabled else "выключен"
-        logger.info(f"AI для всех пользователей {status}")
+        status = "enabled" if enabled else "disabled"
+        logger.info(f"AI configuration {status}")
         return {"success": True, "enabled": enabled}
     except Exception as e:
-        logger.error(f"Ошибка переключения AI: {e}")
+        logger.error(f"Config update error: {e}")
         return {"error": "Ошибка сервера"}
 
-@app.get("/api/admin/status")
-async def admin_status(request: Request):
-    """Получение статуса AI (для админов)"""
-    admin_token = request.headers.get("X-Admin-Token")
+@app.get("/api/user/settings")
+async def user_settings(request: Request):
+    """User settings retrieval"""
+    admin_token = request.headers.get("X-Session-Token")
 
     if not is_admin(admin_token):
         return {"is_admin": False}
 
     return {
         "is_admin": True,
-        "ai_enabled_for_all": ai_config.get("enabled_for_all", True)
+        "ai_enabled": ai_config.get("enabled_for_all", True)
     }
 
 # --- ИИ ---

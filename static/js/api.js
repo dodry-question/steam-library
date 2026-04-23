@@ -210,10 +210,10 @@ async function getAI() {
     window.aiProcessing = true; // Блокируем повторные запросы
 
     try {
-        const adminToken = localStorage.getItem('admin_token');
+        const sessionToken = localStorage.getItem('session_token');
         const headers = {'Content-Type': 'application/json'};
-        if (adminToken) {
-            headers['X-Admin-Token'] = adminToken;
+        if (sessionToken) {
+            headers['X-Session-Token'] = sessionToken;
         }
 
         const resp = await fetch(endpoint, {
