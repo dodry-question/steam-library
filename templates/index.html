@@ -52,7 +52,7 @@
     </div>
 
     <!-- ПАНЕЛЬ УПРАВЛЕНИЯ -->
-    <div class="controls" style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="controls" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
 
         <!-- ЛЕВАЯ ЧАСТЬ -->
         <div class="controls-left">
@@ -79,11 +79,11 @@
         </div>
 
         <!-- ПРАВАЯ ЧАСТЬ -->
-        <div style="display: flex; gap: 10px; align-items: center;">
+        <div class="controls-right" style="display: flex; gap: 10px; align-items: center;">
 
             <!-- AI ПОИСК -->
             <div class="ai-input-group" style="display: flex; background-color: #1e232d !important; border: 1px solid #3d4450 !important; border-radius: 6px; overflow: hidden; align-items: center; margin-right: 15px;">
-                <input type="text" id="ai-search-query" placeholder="Например: мрачная РПГ... или оставь пустым" maxlength="80" style="background-color: transparent !important; color: #ffffff !important; border: none !important; outline: none !important; padding: 8px 12px; width: 250px; font-family: inherit; font-size: 13px;">
+                <input type="text" id="ai-search-query" placeholder="Например: мрачная РПГ... или оставь пустым" maxlength="80" style="flex: 1; min-width: 0; background-color: transparent !important; color: #ffffff !important; border: none !important; outline: none !important; padding: 8px 12px; font-family: inherit; font-size: 13px;">
                 <button onclick="getAI()" class="btn-ai-search" id="main-ai-btn" title="Сгенерировать рекомендацию" style="background: linear-gradient(90deg, #8a2be2, #4b0082) !important; color: #ffffff !important; border: none !important; padding: 8px 16px; font-weight: bold; cursor: pointer; white-space: nowrap; flex-shrink: 0;">✨ AI Совет</button>
             </div>
 

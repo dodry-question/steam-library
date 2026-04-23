@@ -139,11 +139,14 @@ function updateCardDetails(game) {
     if (!cardLink) return;
 
     const card = cardLink.closest('.card');
+    if (!card) return;
 
     const genreEl = card.querySelector('.genres');
     if (genreEl) genreEl.innerText = game.genres || "";
 
     const priceBlock = card.querySelector('.price-block');
+    if (!priceBlock) return; // ЗАЩИТА: если элемент не найден, выходим
+
     let displayPrice = game.price_str;
 
     if (!displayPrice || displayPrice === "...") displayPrice = "—";

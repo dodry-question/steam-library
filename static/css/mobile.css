@@ -275,6 +275,27 @@
         gap: 10px !important;
     }
 
+    /* --- AI ПОИСК (НОВЫЙ БЛОК) --- */
+    .ai-input-group {
+        width: 100% !important;
+        max-width: none !important;
+        order: 2;
+        margin-right: 0 !important;
+    }
+
+    .ai-input-group input {
+        flex: 1 !important;
+        min-width: 0 !important;
+        width: auto !important;
+        padding: 12px !important;
+    }
+
+    .btn-ai-search {
+        padding: 12px 16px !important;
+        flex-shrink: 0 !important;
+    }
+
+    /* --- СТАРЫЙ БЛОК (на случай если остался) --- */
     .ai-split-container {
         width: 100%;
     }
@@ -295,9 +316,11 @@
         width: 100%;
     }
 
+    /* --- ПОИСК ПО ID ДРУГА --- */
     .controls-right > div:last-child {
         width: 100% !important;
         display: flex !important;
+        order: 3;
     }
 
     .input-friend {
