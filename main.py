@@ -355,6 +355,10 @@ def sanitize_custom_query(query: Optional[str]) -> Optional[str]:
     # Ограничиваем длину
     query = query.strip()[:80]
 
+    # Если после strip осталась пустая строка - возвращаем None
+    if not query:
+        return None
+
     # Список опасных ключевых слов для Prompt Injection
     dangerous_keywords = [
         "ignore", "ignor", "system", "assistant", "prompt", "instruction",
