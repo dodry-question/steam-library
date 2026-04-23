@@ -9,7 +9,6 @@
     <!-- CSS модули -->
     <link rel="stylesheet" href="/static/css/main.css">
     <link rel="stylesheet" href="/static/css/mobile.css">
-    <link rel="stylesheet" href="/static/css/light-theme.css">
 </head>
 <body>
     <!-- ШАПКА -->
@@ -20,7 +19,6 @@
                 <span id="copy-btn" onclick="copyLibrary()" title="Скопировать список игр" style="display:none; cursor:pointer; font-size: 18px; margin-left: 12px; vertical-align: middle; opacity: 0.6; transition: 0.2s;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#66c0f4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </span>
-                <span id="theme-icon" class="theme-toggle" onclick="toggleTheme()" title="Переключить тему">☀️</span>
             </h1>
             <div id="user-tz" class="timezone-badge" title="Определяем пояс...">🕒 Определяем...</div>
         </div>
@@ -84,20 +82,9 @@
         <div style="display: flex; gap: 10px; align-items: center;">
 
             <!-- ЕДИНАЯ КНОПКА ИИ -->
-            <div class="ai-split-container" id="ai-split-container">
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="ai-search-query" class="input-friend" placeholder="Например: мрачная РПГ на вечер... или оставь пустым" style="width: 280px;">
                 <button onclick="getAI()" class="btn-ai-main" id="main-ai-btn" title="Сгенерировать рекомендацию">✨ AI Совет</button>
-
-                <button class="btn-ai-dropdown" id="mood-trigger" title="Настроить фильтр (настроение)">
-                    <span id="current-mood-emoji">💎</span><span class="arrow">▼</span>
-                </button>
-
-                <div class="mood-menu" id="mood-menu">
-                    <div class="mood-item active" data-value="hidden gems" data-emoji="💎">💎 Скрытые жемчужины</div>
-                    <div class="mood-item" data-value="experimental indie" data-emoji="🧪">🧪 Экспериментальное инди</div>
-                    <div class="mood-item" data-value="hardcore challenge" data-emoji="💀">💀 Хардкор и вызов</div>
-                    <div class="mood-item" data-value="relaxing atmosphere" data-emoji="☕">☕ Медитативное / Отдых</div>
-                    <div class="mood-item" data-value="story rich" data-emoji="📖">📖 Глубокий сюжет</div>
-                </div>
             </div>
 
             <div style="display: flex;">
@@ -176,14 +163,9 @@
     </div>
 
     <!-- JavaScript модули -->
-    <script src="/static/js/theme.js"></script>
     <script src="/static/js/selection.js"></script>
     <script src="/static/js/ui.js"></script>
     <script src="/static/js/api.js"></script>
     <script src="/static/js/app.js"></script>
-    <script>
-        // Инициализация темы при загрузке
-        initTheme();
-    </script>
 </body>
 </html>

@@ -4,7 +4,6 @@
 window.loadedGames = [];
 window.isProcessing = false;
 window.aiProcessing = false;
-window.currentMood = "hidden gems";
 window.currentLoadedTarget = null;
 window.syncController = null;
 window.recommendedHistory = {};
@@ -13,31 +12,6 @@ window.recommendedHistory = {};
 document.addEventListener('DOMContentLoaded', function() {
     // Инициализация часового пояса
     window.initTimezone();
-
-    // Меню настроения
-    const moodTrigger = document.getElementById('mood-trigger');
-    const moodMenu = document.getElementById('mood-menu');
-
-    if (moodTrigger) {
-        moodTrigger.addEventListener('click', function(e) {
-            moodMenu.style.display = moodMenu.style.display === 'block' ? 'none' : 'block';
-            e.stopPropagation();
-        });
-    }
-
-    document.querySelectorAll('.mood-item').forEach(item => {
-        item.addEventListener('click', function() {
-            document.querySelectorAll('.mood-item').forEach(i => i.classList.remove('active'));
-            this.classList.add('active');
-            window.currentMood = this.getAttribute('data-value');
-            document.getElementById('current-mood-emoji').innerText = this.getAttribute('data-emoji');
-            moodMenu.style.display = 'none';
-        });
-    });
-
-    window.addEventListener('click', function() {
-        if (moodMenu) moodMenu.style.display = 'none';
-    });
 
     // Поиск по нажатию Enter
     const searchInput = document.getElementById('search-input');
@@ -61,6 +35,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 window.loadLibrary(true);
+            }
+        });
+    }
+
+    // AI поиск по нажатию Enter
+    const aiSearchInput = document.getElementById('ai-search-query');
+    if (aiSearchInput) {
+        aiSearchInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                window.getAI();
             }
         });
     }

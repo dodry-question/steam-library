@@ -353,8 +353,8 @@ async def recommend(request: Request):
     try:
         body = await request.json()
         all_games = body.get("games", [])
-        mood = body.get("mood", "hidden gems")
-        
+        custom_query = body.get("custom_query")  # Может быть None или строка
+
         # НОВОЕ: Достаем историю рекомендаций
         already_recommended = body.get("already_recommended", [])
         
@@ -378,10 +378,25 @@ async def recommend(request: Request):
         # НОВОЕ: Формируем дополнительное правило, если история не пустая
         history_rule = f"\n2. ТАКЖЕ ЗАПРЕЩЕНО советовать эти игры (ты их уже рекомендовал ранее): {', '.join(already_recommended)}." if already_recommended else ""
 
-        # 3. Промпт с жестким требованием вернуть JSON
-        prompt = f"""
+        # 3. Промпт с жестким требованием вернуть JSON - адаптируется под наличие custom_query
+        if custom_query:
+            # Если пользователь ввел запрос - используем его
+            prompt = f"""
 Ты игровой эксперт. Игрок любит эти игры: {core_names}.
-Посоветуй ровно 5 игр в Steam, которые подойдут под настроение: '{mood}'. Отсортируй их по релевантности (самая подходящая первая).
+Пользователь сделал специфический запрос: '{custom_query}'. Посоветуй ровно 5 игр в Steam, которые максимально точно подходят под этот запрос, учитывая вкусы игрока. Отсортируй их по релевантности (самая подходящая первая).
+СТРОГИЕ ПРАВИЛА:
+1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
+3. Твой ответ должен быть СТРОГО в формате валидного JSON-массива, без Markdown разметки, без лишних слов.
+Формат ответа:
+[
+  {{"name": "Название игры", "based_on": "Название игры из списка игрока, на которую она похожа", "reason": "Краткая причина на русском языке, как игра связана с запросом '{custom_query}'"}}
+]
+"""
+        else:
+            # Если запрос пустой - убираем упоминание настроения
+            prompt = f"""
+Ты игровой эксперт. Игрок любит эти игры: {core_names}.
+Посоветуй ровно 5 отличных игр в Steam, которые с наибольшей вероятностью понравятся этому игроку на основе его предпочтений. Отсортируй их по релевантности (самая подходящая первая).
 СТРОГИЕ ПРАВИЛА:
 1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
 3. Твой ответ должен быть СТРОГО в формате валидного JSON-массива, без Markdown разметки, без лишних слов.
@@ -396,11 +411,11 @@ async def recommend(request: Request):
 
         if not API_KEY:
             logger.error("VSEGPT_API_KEY не найден в .env")
-            print("❌ ОШИБКА: Ключ VSEGPT_API_KEY не найден в .env")
+            print("ОШИБКА: Ключ VSEGPT_API_KEY не найден в .env")
             return {"content": {"error": "API ключ ИИ не настроен."}}
 
         async with httpx.AsyncClient() as client:
-            print(f"🔄 Отправляем запрос к VseGPT (gpt-4o-mini)...")
+            print(f"Отправляем запрос к VseGPT (gpt-4o-mini)...")
             
             # Запрос к нейросети
             resp = await client.post(
@@ -423,13 +438,13 @@ async def recommend(request: Request):
             if "error" in result:
                 err_msg = result['error'].get('message', 'Неизвестная ошибка')
                 logger.error(f"Ошибка VseGPT API: {err_msg}")
-                print(f"⚠️ Ошибка API VseGPT: {err_msg}")
+                print(f"Ошибка API VseGPT: {err_msg}")
                 return {"content": {"error": "Ошибка на сервере ИИ. Проверьте консоль."}}
-            
+
             # Успешный ответ
             if "choices" in result and len(result["choices"]) > 0:
                 raw_text = result['choices'][0]['message']['content'].strip()
-                print(f"✅ ИИ ответил:\n{raw_text}") # Выводим в терминал для проверки
+                print(f"ИИ ответил:\n{raw_text}") # Выводим в терминал для проверки
                 
                 # Очищаем текст от Markdown тегов (ИИ любит оборачивать JSON в ```json ... ```)
                 clean_text = re.sub(r"^```json", "", raw_text, flags=re.MULTILINE)
@@ -464,14 +479,14 @@ async def recommend(request: Request):
                         
                 except json.JSONDecodeError as e:
                     logger.error(f"Ошибка парсинга JSON от AI: {e}\nТекст: {clean_text[:200]}")
-                    print(f"❌ Ошибка парсинга JSON: {e}\nТекст был: {clean_text}")
+                    print(f"Ошибка парсинга JSON: {e}\nТекст был: {clean_text}")
                     return {"content": {"error": "ИИ выдал ответ в неверном формате."}}
-                    
+
             return {"content": {"error": "Пустой ответ от ИИ."}}
 
     except Exception as e:
         logger.error(f"Критическая ошибка в /api/recommend: {e}", exc_info=True)
-        print(f"❌ Критическая ошибка ИИ: {e}")
+        print(f"Критическая ошибка ИИ: {e}")
         return {"content": {"error": str(e)}}
 
 @app.post("/api/recommend-selected")
@@ -485,8 +500,8 @@ async def recommend_selected(request: Request):
         body = await request.json()
         all_games = body.get("games", [])
         target_games = body.get("target_games", [])
-        mood = body.get("mood", "hidden gems")
-        
+        custom_query = body.get("custom_query")  # Может быть None или строка
+
         # НОВОЕ: Достаем историю рекомендаций
         already_recommended = body.get("already_recommended", [])
         
@@ -501,9 +516,25 @@ async def recommend_selected(request: Request):
         # НОВОЕ: Правило для истории
         history_rule = f"\n2. ТАКЖЕ ЗАПРЕЩЕНО советовать эти игры (ты их уже рекомендовал ранее): {', '.join(already_recommended)}." if already_recommended else ""
 
-        prompt = f"""
+        # Промпт адаптируется под наличие custom_query
+        if custom_query:
+            # Если пользователь ввел запрос - используем его
+            prompt = f"""
 Ты игровой эксперт. Игрок выбрал эти игры из своей библиотеки: {targets_str}.
-Посоветуй ровно 5 игр в Steam, которые максимально похожи на этот набор игр (по геймплею, атмосфере, жанру), учитывая настроение: '{mood}'. Отсортируй их по релевантности (самая подходящая первая).
+Пользователь сделал специфический запрос: '{custom_query}'. Посоветуй ровно 5 игр в Steam, которые максимально точно подходят под этот запрос, учитывая выбранные игры и вкусы игрока. Отсортируй их по релевантности (самая подходящая первая).
+СТРОГИЕ ПРАВИЛА:
+1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
+3. Ответ СТРОГО в формате JSON-массива, без Markdown, без лишних слов.
+Формат ответа:
+[
+  {{"name": "Название игры", "based_on": "На какую из выбранных игр она больше всего похожа", "reason": "Кратко на русском, как игра связана с запросом '{custom_query}' и выбранными играми"}}
+]
+"""
+        else:
+            # Если запрос пустой - убираем упоминание настроения
+            prompt = f"""
+Ты игровой эксперт. Игрок выбрал эти игры из своей библиотеки: {targets_str}.
+Посоветуй ровно 5 игр в Steam, которые максимально похожи на этот набор игр (по геймплею, атмосфере, жанру). Отсортируй их по релевантности (самая подходящая первая).
 СТРОГИЕ ПРАВИЛА:
 1. ЗАПРЕЩЕНО советовать игры, которые уже есть у игрока: {owned_names}.{history_rule}
 3. Ответ СТРОГО в формате JSON-массива, без Markdown, без лишних слов.

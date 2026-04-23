@@ -176,13 +176,18 @@ async function getAI() {
     block.style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    let historyForCurrentMood = window.recommendedHistory[window.currentMood] || [];
+    // Получаем значение из текстового поля
+    const customQuery = document.getElementById('ai-search-query')?.value.trim() || '';
+
+    // Используем запрос как ключ для истории (или 'default' если пусто)
+    const historyKey = customQuery || 'default';
+    let historyForCurrentQuery = window.recommendedHistory[historyKey] || [];
 
     let endpoint = '/api/recommend';
     let bodyData = {
         games: window.loadedGames,
-        mood: window.currentMood,
-        already_recommended: historyForCurrentMood
+        custom_query: customQuery || null,
+        already_recommended: historyForCurrentQuery
     };
     let loadingText = 'ИИ анализирует ваш профиль (обычно занимает 10-15 сек)...';
 
@@ -192,8 +197,8 @@ async function getAI() {
         bodyData = {
             games: window.loadedGames,
             target_games: targetGamesArray,
-            mood: window.currentMood,
-            already_recommended: historyForCurrentMood
+            custom_query: customQuery || null,
+            already_recommended: historyForCurrentQuery
         };
         loadingText = `ИИ подбирает игры, похожие на: <b>${targetGamesArray.join(', ')}</b>...`;
     }
@@ -228,12 +233,12 @@ async function getAI() {
         const recs = data.content.recommendations;
 
         if (recs && recs.length > 0) {
-            if (!window.recommendedHistory[window.currentMood]) {
-                window.recommendedHistory[window.currentMood] = [];
+            if (!window.recommendedHistory[historyKey]) {
+                window.recommendedHistory[historyKey] = [];
             }
             recs.forEach(r => {
-                if (!window.recommendedHistory[window.currentMood].includes(r.name)) {
-                    window.recommendedHistory[window.currentMood].push(r.name);
+                if (!window.recommendedHistory[historyKey].includes(r.name)) {
+                    window.recommendedHistory[historyKey].push(r.name);
                 }
             });
 
