@@ -49,4 +49,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Админ-панель: двойной клик по логотипу
+    let clickCount = 0;
+    let clickTimer = null;
+    const logo = document.querySelector('.header-title-wrapper h1');
+    if (logo) {
+        logo.addEventListener('click', function() {
+            clickCount++;
+            if (clickCount === 1) {
+                clickTimer = setTimeout(() => {
+                    clickCount = 0;
+                }, 500);
+            } else if (clickCount === 2) {
+                clearTimeout(clickTimer);
+                clickCount = 0;
+                window.openAdminPanel();
+            }
+        });
+    }
 });

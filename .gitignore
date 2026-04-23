@@ -13,3 +13,5 @@ node_modules/
 *.swp
 *.swo
 *~
+admin_tokens.json
+ai_config.json

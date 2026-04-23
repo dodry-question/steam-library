@@ -5,9 +5,10 @@ import random
 import asyncio
 import httpx
 import logging
+import secrets
 from dotenv import load_dotenv
 load_dotenv(override=True)
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Set
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from urllib.parse import quote, unquote
@@ -42,6 +43,45 @@ STEAM_API_KEY = RAW_KEY.strip().replace('"', '').replace("'", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY)
 print(f"DEBUG: Groq Key loaded: {'Yes' if GROQ_API_KEY else 'No'}")
+
+# Админ настройки
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "13526")
+ADMIN_TOKENS_FILE = "admin_tokens.json"
+AI_CONFIG_FILE = "ai_config.json"
+
+# Загрузка админ токенов
+admin_tokens: Set[str] = set()
+if os.path.exists(ADMIN_TOKENS_FILE):
+    try:
+        with open(ADMIN_TOKENS_FILE, 'r') as f:
+            admin_tokens = set(json.load(f))
+    except:
+        admin_tokens = set()
+
+# Загрузка конфигурации AI
+ai_config = {"enabled_for_all": True}
+if os.path.exists(AI_CONFIG_FILE):
+    try:
+        with open(AI_CONFIG_FILE, 'r') as f:
+            ai_config = json.load(f)
+    except:
+        ai_config = {"enabled_for_all": True}
+
+def save_admin_tokens():
+    """Сохранение админ токенов в файл"""
+    with open(ADMIN_TOKENS_FILE, 'w') as f:
+        json.dump(list(admin_tokens), f)
+
+def save_ai_config():
+    """Сохранение конфигурации AI в файл"""
+    with open(AI_CONFIG_FILE, 'w') as f:
+        json.dump(ai_config, f)
+
+def is_admin(token: Optional[str]) -> bool:
+    """Проверка, является ли пользователь админом"""
+    if not token:
+        return False
+    return token in admin_tokens
 
 if not STEAM_API_KEY:
     logger.error("STEAM_API_KEY не найден в переменных окружения!")
@@ -377,6 +417,12 @@ def sanitize_custom_query(query: Optional[str]) -> Optional[str]:
 
 @app.post("/api/recommend")
 async def recommend(request: Request):
+    # Проверка прав доступа к AI
+    admin_token = request.headers.get("X-Admin-Token")
+    if not ai_config.get("enabled_for_all", True):
+        if not is_admin(admin_token):
+            return {"content": {"error": "AI рекомендации временно недоступны"}}
+
     # Проверка rate limit
     client_ip = request.client.host
     if not check_rate_limit(client_ip):
@@ -537,6 +583,12 @@ async def recommend(request: Request):
 
 @app.post("/api/recommend-selected")
 async def recommend_selected(request: Request):
+    # Проверка прав доступа к AI
+    admin_token = request.headers.get("X-Admin-Token")
+    if not ai_config.get("enabled_for_all", True):
+        if not is_admin(admin_token):
+            return {"content": {"error": "AI рекомендации временно недоступны"}}
+
     # Проверка rate limit
     client_ip = request.client.host
     if not check_rate_limit(client_ip):
@@ -718,6 +770,63 @@ async def add_game_manual(steam_id: int = Form(...)):
     async for item in game_generator(payload):
         return json.loads(item)
     return {"error": "Не удалось загрузить"}
+
+# --- АДМИН API ---
+
+@app.post("/api/admin/activate")
+async def activate_admin(request: Request):
+    """Активация админ-токена (двойной клик на логотип)"""
+    try:
+        body = await request.json()
+        password = body.get("password", "")
+
+        if password != ADMIN_PASSWORD:
+            return {"error": "Неверный пароль"}
+
+        # Генерируем уникальный токен
+        token = secrets.token_urlsafe(32)
+        admin_tokens.add(token)
+        save_admin_tokens()
+
+        logger.info(f"Новый админ токен создан")
+        return {"success": True, "token": token}
+    except Exception as e:
+        logger.error(f"Ошибка активации админа: {e}")
+        return {"error": "Ошибка сервера"}
+
+@app.post("/api/admin/toggle-ai")
+async def toggle_ai(request: Request):
+    """Переключение доступа AI для всех пользователей"""
+    try:
+        body = await request.json()
+        admin_token = body.get("token", "")
+        enabled = body.get("enabled", True)
+
+        if not is_admin(admin_token):
+            return {"error": "Доступ запрещен"}
+
+        ai_config["enabled_for_all"] = enabled
+        save_ai_config()
+
+        status = "включен" if enabled else "выключен"
+        logger.info(f"AI для всех пользователей {status}")
+        return {"success": True, "enabled": enabled}
+    except Exception as e:
+        logger.error(f"Ошибка переключения AI: {e}")
+        return {"error": "Ошибка сервера"}
+
+@app.get("/api/admin/status")
+async def admin_status(request: Request):
+    """Получение статуса AI (для админов)"""
+    admin_token = request.headers.get("X-Admin-Token")
+
+    if not is_admin(admin_token):
+        return {"is_admin": False}
+
+    return {
+        "is_admin": True,
+        "ai_enabled_for_all": ai_config.get("enabled_for_all", True)
+    }
 
 # --- ИИ ---
 
