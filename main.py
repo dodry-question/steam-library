@@ -130,7 +130,7 @@ def create_db_and_tables():
     try:
         SQLModel.metadata.create_all(engine)
     except Exception as e:
-        print(f"⚠️ Ошибка создания БД: {e}")
+        print(f"Ошибка создания БД: {e}")
 
 app = FastAPI()
 
@@ -881,10 +881,10 @@ async def auth(request: Request):
                         # Сохраняем самую четкую аватарку
                         user_avatar = player.get('avatarfull') or player.get('avatarmedium') or user_avatar
                 else:
-                    print(f"❌ Steam API Error: {resp.status_code}")
+                    print(f"Steam API Error: {resp.status_code}")
             except Exception as e:
                 # Теперь эта ошибка не вылетит из-за api_url, так как она определена выше
-                print(f"❌ Auth Error: {e}")
+                print(f"Auth Error: {e}")
 
         # 4. Сохраняем всё в куки
         resp = RedirectResponse("/")

@@ -140,10 +140,10 @@ function updateAiButtonState() {
             actionPanel.style.display = 'flex';
         }
 
-        if (panelAiBtn) panelAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
+        if (panelAiBtn) panelAiBtn.innerHTML = `Искать похожее (${selectedGames.size})`;
 
         if (mainAiBtn) {
-            mainAiBtn.innerHTML = `✨ Искать похожее (${selectedGames.size})`;
+            mainAiBtn.innerHTML = `Искать похожее (${selectedGames.size})`;
         }
 
         if (aiContainer) {
@@ -161,7 +161,7 @@ function updateAiButtonState() {
         }
 
         if (mainAiBtn) {
-            mainAiBtn.innerHTML = `✨ AI Совет`;
+            mainAiBtn.innerHTML = `AI Совет`;
         }
 
         if (aiContainer) {

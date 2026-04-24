@@ -84,7 +84,7 @@
             <!-- AI ПОИСК -->
             <div class="ai-input-group" style="display: flex; background-color: #1e232d !important; border: 1px solid #3d4450 !important; border-radius: 6px; overflow: hidden; align-items: center; margin-right: 15px;">
                 <input type="text" id="ai-search-query" placeholder="Например: мрачная РПГ... или оставь пустым" maxlength="80" style="flex: 1; min-width: 0; background-color: transparent !important; color: #ffffff !important; border: none !important; outline: none !important; padding: 8px 12px; font-family: inherit; font-size: 13px;">
-                <button onclick="getAI()" class="btn-ai-search" id="main-ai-btn" title="Сгенерировать рекомендацию" style="background: linear-gradient(90deg, #8a2be2, #4b0082) !important; color: #ffffff !important; border: none !important; padding: 8px 16px; font-weight: bold; cursor: pointer; white-space: nowrap; flex-shrink: 0;">✨ AI Совет</button>
+                <button onclick="getAI()" class="btn-ai-search" id="main-ai-btn" title="Сгенерировать рекомендацию" style="background: linear-gradient(90deg, #8a2be2, #4b0082) !important; color: #ffffff !important; border: none !important; padding: 8px 16px; font-weight: bold; cursor: pointer; white-space: nowrap; flex-shrink: 0;">AI Совет</button>
             </div>
 
             <div style="display: flex;">
@@ -114,7 +114,7 @@
                 <p>Удобная сортировка покажет, в каких мирах ты оставил больше всего часов своей жизни.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">✨</div>
+                <div class="feature-icon">★</div>
                 <h3>AI-Советник</h3>
                 <p>Не знаешь во что поиграть? ИИ подберет идеальную игру под твое текущее настроение.</p>
             </div>
@@ -122,8 +122,8 @@
 
         <div class="empty-cta">
             {% if user_id %}
-                <button onclick="loadLibrary()" class="btn-load btn-pulse-green">🎮 Загрузить мои игры</button>
-                <span style="color: #697885; font-size: 14px;">или введи ID друга в поиске сверху ☝️</span>
+                <button onclick="loadLibrary()" class="btn-load btn-pulse-green">Загрузить мои игры</button>
+                <span style="color: #697885; font-size: 14px;">или введи ID друга в поиске сверху</span>
             {% else %}
                 <button onclick="openAuthModal()" class="btn-steam" style="font-size: 16px; padding: 12px 24px; cursor: pointer;">
                     <div class="steam-icon"></div>

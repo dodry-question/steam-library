@@ -65,14 +65,14 @@ async function loadLibrary(isFriend = false) {
             window.loadedGames.forEach(g => window.addCard(g));
 
             if (total > 100) {
-                statusBar.innerHTML = `✅ Список готов. <span style="color:#a4d007">Цены и жанры подгружаются в фоне...</span>`;
+                statusBar.innerHTML = `Список готов. <span style="color:#a4d007">Цены и жанры подгружаются в фоне...</span>`;
             } else {
-                statusBar.innerHTML = `✅ Загружено ${total} игр.`;
+                statusBar.innerHTML = `Загружено ${total} игр.`;
             }
 
             startBackgroundSync(data.games);
         } else if (data.error) {
-            statusBar.innerHTML = `<span style="color: #ff5c5c;">⚠️ Ошибка: ${data.error}</span>`;
+            statusBar.innerHTML = `<span style="color: #ff5c5c;">Ошибка: ${data.error}</span>`;
             window.currentLoadedTarget = null;
         }
     } catch (e) {
@@ -117,7 +117,7 @@ async function startBackgroundSync(rawList) {
             const { done, value } = await reader.read();
 
             if (done) {
-                statusBar.innerHTML = `✅ Загрузка завершена! Обработано деталей: ${processedCount} из ${total}`;
+                statusBar.innerHTML = `Загрузка завершена! Обработано деталей: ${processedCount} из ${total}`;
                 setTimeout(() => {
                     if(statusBar.innerText.includes('Загрузка завершена'))
                         statusBar.innerText = '';
@@ -136,7 +136,7 @@ async function startBackgroundSync(rawList) {
                     processedCount++;
 
                     if (total > 100 && processedCount % 5 === 0) {
-                        statusBar.innerHTML = `⚙️ Синхронизация цен... ${processedCount} / ${total}`;
+                        statusBar.innerHTML = `Синхронизация цен... ${processedCount} / ${total}`;
                     }
 
                     const idx = window.loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
@@ -153,7 +153,7 @@ async function startBackgroundSync(rawList) {
             console.log('Фоновая загрузка остановлена пользователем.');
         } else {
             console.error("Ошибка фоновой синхронизации:", e);
-            statusBar.innerHTML = `<span style="color: #ff6c6c;">⚠️ Фоновая загрузка прервана</span>`;
+            statusBar.innerHTML = `<span style="color: #ff6c6c;">Фоновая загрузка прервана</span>`;
         }
     }
 }
@@ -234,7 +234,7 @@ async function getAI() {
         }
 
         if (data.content.error) {
-            block.innerHTML = `<span style="color: #ffcc00;">⚠️ Сообщение от ИИ: ${data.content.error}</span>`;
+            block.innerHTML = `<span style="color: #ffcc00;">Сообщение от ИИ: ${data.content.error}</span>`;
             window.aiProcessing = false; // Разблокируем при ошибке
             return;
         }
@@ -251,7 +251,7 @@ async function getAI() {
                 }
             });
 
-            let titleText = window.isSelectionMode ? "✨ На основе вашего выбора:" : "🤖 Рекомендации профиля:";
+            let titleText = window.isSelectionMode ? "На основе вашего выбора:" : "Рекомендации профиля:";
             let html = `<h3 style="color:#fff; margin:0 0 10px 0;">${titleText}</h3><div class="ai-gallery">`;
 
             recs.forEach(r => {
@@ -262,7 +262,7 @@ async function getAI() {
                         <div class="info">
                             <h2>${r.name}</h2>
                             <div style="margin-bottom: 6px; display: flex; align-items: center;">
-                                <span class="star-tooltip" title="Основано на: ${r.based_on}">⭐</span>
+                                <span class="star-tooltip" title="Основано на: ${r.based_on}">★</span>
                                 <span style="font-size: 11px; color: #697885; margin-left:5px;">Основано на: ${r.based_on}</span>
                             </div>
                             <div class="playtime" style="color: #c7d5e0; margin-top:2px; line-height:1.4; font-size: 12px;">
