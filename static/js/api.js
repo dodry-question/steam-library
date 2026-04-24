@@ -34,7 +34,16 @@ async function loadLibrary(isFriend = false) {
     document.getElementById('container').innerHTML = '';
     window.loadedGames = [];
     document.getElementById('copy-btn').style.display = 'none';
-    document.getElementById('ai-block').style.display = 'none';
+
+    // Очищаем содержимое AI-блока, а не только скрываем
+    const aiBlock = document.getElementById('ai-block');
+    aiBlock.style.display = 'none';
+    aiBlock.innerHTML = '';
+
+    // Сбрасываем режим выделения при очистке библиотеки
+    if (typeof window.clearSelection === "function") {
+        window.clearSelection();
+    }
 
     statusBar.innerHTML = '<span class="spinner"></span> Запрашиваем список у Steam...';
 

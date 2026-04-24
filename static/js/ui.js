@@ -18,7 +18,16 @@ function clearList() {
     window.recommendedHistory = {};
     document.getElementById('copy-btn').style.display = 'none';
     document.getElementById('status-bar').innerText = '';
-    document.getElementById('ai-block').style.display = 'none';
+
+    // Очищаем содержимое AI-блока, а не только скрываем
+    const aiBlock = document.getElementById('ai-block');
+    aiBlock.style.display = 'none';
+    aiBlock.innerHTML = '';
+
+    // Сбрасываем режим выделения при очистке библиотеки
+    if (typeof window.clearSelection === "function") {
+        window.clearSelection();
+    }
 
     const emptyState = document.getElementById('empty-state');
     if (emptyState) emptyState.style.display = 'flex';
@@ -50,6 +59,14 @@ async function copyLibrary() {
  */
 function liveSearch() {
     const query = document.getElementById('search-input').value.toLowerCase().trim();
+
+    // Если поиск активен и есть выделенные игры — сбрасываем выделение
+    if (query && window.selectedGames && window.selectedGames.size > 0) {
+        if (typeof window.clearSelection === "function") {
+            window.clearSelection();
+        }
+    }
+
     document.querySelectorAll('.card').forEach(card => {
         const name = card.querySelector('h2').innerText.toLowerCase();
         card.style.display = name.includes(query) ? 'flex' : 'none';
@@ -79,6 +96,16 @@ function sortGames(type) {
         }
     });
     window.loadedGames.forEach(window.addCard);
+
+    // Восстанавливаем визуальное выделение после сортировки
+    if (window.selectedGames && window.selectedGames.size > 0) {
+        document.querySelectorAll('.card').forEach(card => {
+            const gameName = card.querySelector('h2')?.innerText;
+            if (gameName && window.selectedGames.has(gameName)) {
+                card.classList.add('selected');
+            }
+        });
+    }
 }
 
 /**
@@ -197,6 +224,16 @@ function setMobileView(mode) {
         }
 
         gallery.style.opacity = '1';
+
+        // Восстанавливаем визуальное выделение после смены вида
+        if (window.selectedGames && window.selectedGames.size > 0) {
+            document.querySelectorAll('.card').forEach(card => {
+                const gameName = card.querySelector('h2')?.innerText;
+                if (gameName && window.selectedGames.has(gameName)) {
+                    card.classList.add('selected');
+                }
+            });
+        }
     }, 150);
 }
 
