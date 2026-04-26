@@ -160,27 +160,22 @@ async def on_startup():
 # --- Вспомогательные функции ---
 
 def check_rate_limit(client_ip: str) -> bool:
-    """Проверяет, не превышен ли лимит AI запросов для данного IP"""
     now = time.time()
-    # Очищаем старые запросы
     ai_request_tracker[client_ip] = [
         req_time for req_time in ai_request_tracker[client_ip]
         if now - req_time < AI_RATE_WINDOW
     ]
 
-    # Проверяем лимит
     if len(ai_request_tracker[client_ip]) >= AI_RATE_LIMIT:
         return False
 
-    # Добавляем текущий запрос
     ai_request_tracker[client_ip].append(now)
     return True
 
 async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[int]:
     search_url = "https://store.steampowered.com/api/storesearch/"
-    # Очищаем имя от лишних символов для поиска (оставляем только буквы и цифры)
     clean_name = re.sub(r'[^\w\s]', '', name).lower()
-    
+
     params = {"term": name, "l": "russian", "cc": "ru"}
     try:
         resp = await client.get(search_url, params=params, timeout=10.0)
@@ -188,14 +183,13 @@ async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[in
             data = resp.json()
             if data.get("total") > 0:
                 items = data["items"]
-                
-                # 1. Попытка найти ТОЧНОЕ совпадение по названию
+
+                # Сначала ищем точное совпадение
                 for item in items:
                     item_name_clean = re.sub(r'[^\w\s]', '', item["name"]).lower()
                     if item_name_clean == clean_name:
                         return item["id"]
 
-                # 2. Если точного нет, берем первый результат
                 return items[0]["id"]
     except Exception as e:
         logger.warning(f"Ошибка поиска игры '{name}': {e}")
@@ -204,7 +198,7 @@ async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[in
 async def request_store(client, app_id, region="ru"):
     url = "https://store.steampowered.com/api/appdetails"
     params = {"appids": str(app_id), "cc": region, "l": "russian"}
-    headers = {"User-Agent": "Mozilla/5.0"} 
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         resp = await client.get(url, params=params, headers=headers, timeout=10.0)
@@ -212,28 +206,27 @@ async def request_store(client, app_id, region="ru"):
             return resp.json()
         elif resp.status_code == 429:
             logger.warning(f"Steam API rate limit для app {app_id}")
-            return "RETRY_LATER" # Специальный маркер для блокировки
+            return "RETRY_LATER"
     except Exception as e:
         logger.error(f"Ошибка запроса к Steam Store API для app {app_id}: {e}")
         return None
 
 async def fetch_steam_store_data(client: httpx.AsyncClient, app_id: int):
     async with STORE_API_LOCK:
-        # Пытаемся получить RU регион
         data = await request_store(client, app_id, region="ru")
-        
+
         if data == "RETRY_LATER":
             return "RETRY_LATER", False
-            
+
         sid_str = str(app_id)
         is_fallback = False
-        
-        # Если в RU не удалось (регионлок или просто нет данных), пробуем US
+
+        # Если RU не работает, пробуем US
         if not data or not data.get(sid_str, {}).get('success'):
-            await asyncio.sleep(0.5) # Маленькая пауза между попытками регионов
+            await asyncio.sleep(0.5)
             data = await request_store(client, app_id, region="us")
             is_fallback = True
-            
+
         return (data if data != "RETRY_LATER" else None), is_fallback
 
 def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool = False) -> Game:
@@ -245,7 +238,6 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
     genres_list = [g['description'] for g in game_data.get('genres', [])]
     genres_str = ", ".join(genres_list) if genres_list else ""
 
-    # Логика определения цены
     price_val = "Нет в продаже"
     discount = 0
 
@@ -256,8 +248,8 @@ def parse_game_obj(steam_id: int, data: dict, known_name: str, is_fallback: bool
             p = game_data['price_overview']
             price_val = p.get('final_formatted', "Бесплатно")
             discount = p.get('discount_percent', 0)
-    
-    # Если это fallback (данные из США), добавляем спец. маркер
+
+    # Маркер для цен из US региона
     if is_fallback and success and price_val not in ["Нет в продаже", "Бесплатно"]:
         final_price = f"LOCKED|{price_val}"
     else:
@@ -278,40 +270,30 @@ async def get_games_batch(payload: BatchRequest):
     return StreamingResponse(game_generator(payload), media_type="application/x-ndjson")
 
 def get_latest_steam_update_time() -> datetime:
-    """
-    Рассчитывает точное время последнего глобального обновления цен в Steam.
-    Steam обновляется в 10:00 AM по времени Сиэтла (Pacific Time).
-    Мы используем 10:10 AM для запаса.
-    """
-    # 1. Получаем текущее время в часовом поясе серверов Steam (с учетом зима/лето)
+    # Steam обновляет цены в 10:10 AM по времени Сиэтла
     pt_zone = ZoneInfo("America/Los_Angeles")
     now_pt = datetime.now(pt_zone)
-    
-    # 2. Формируем "сегодня в 10:10 утра" по их времени
+
     update_time_pt = now_pt.replace(hour=10, minute=10, second=0, microsecond=0)
-    
-    # 3. Если у них сейчас еще нет 10:10 утра, значит последнее обновление было ВЧЕРА
+
     if now_pt < update_time_pt:
         update_time_pt -= timedelta(days=1)
-        
-    # 4. Переводим это время в "локальное время нашего сервера" (наивное), 
-    # так как в базу данных last_updated мы сохраняли через простой datetime.now()
-    local_aware = update_time_pt.astimezone() 
+
+    local_aware = update_time_pt.astimezone()
     local_naive = local_aware.replace(tzinfo=None)
-    
+
     return local_naive
 
-# --- ГЕНЕРАТОР (Который у вас отсутствовал) ---
+# --- ГЕНЕРАТОР ---
 
 async def game_generator(payload: BatchRequest):
     ids = payload.steam_ids
     playtimes = payload.playtimes
     names_map = payload.game_names
-    
-    # Получаем точную границу последнего обновления магазина Steam (10:10 PT)
+
     cutoff = get_latest_steam_update_time()
 
-    # 1. Сначала отдаем ВСЁ, что есть в БД (это происходит мгновенно)
+    # Сначала отдаем все из БД
     with Session(engine) as session:
         existing_games = session.exec(select(Game).where(Game.steam_id.in_(ids))).all()
         existing_map = {g.steam_id: g for g in existing_games}
@@ -386,45 +368,34 @@ async def game_generator(payload: BatchRequest):
 # --- API ---
 
 def sanitize_custom_query(query: Optional[str]) -> Optional[str]:
-    """
-    Санитизация пользовательского запроса для защиты от Prompt Injection.
-    Удаляет опасные ключевые слова и ограничивает длину.
-    """
     if not query:
         return None
 
-    # Ограничиваем длину
     query = query.strip()[:80]
 
-    # Если после strip осталась пустая строка - возвращаем None
     if not query:
         return None
 
-    # Список опасных ключевых слов для Prompt Injection
     dangerous_keywords = [
         "ignore", "ignor", "system", "assistant", "prompt", "instruction",
         "forget", "disregard", "override", "bypass", "admin", "root",
         "execute", "eval", "script", "code", "function", "return"
     ]
 
-    # Удаляем опасные слова (case-insensitive)
     query_lower = query.lower()
     for keyword in dangerous_keywords:
         if keyword in query_lower:
-            # Заменяем опасное слово на безопасное
             query = re.sub(re.escape(keyword), "***", query, flags=re.IGNORECASE)
 
     return query
 
 @app.post("/api/recommend")
 async def recommend(request: Request):
-    # Проверка прав доступа к AI
     session_token = request.headers.get("X-Session-Token")
     if not ai_config.get("enabled_for_all", True):
         if not is_admin(session_token):
             return {"content": {"error": "AI рекомендации временно недоступны"}}
 
-    # Проверка rate limit
     client_ip = request.client.host
     if not check_rate_limit(client_ip):
         return {"content": {"error": "Слишком много запросов. Подождите минуту и попробуйте снова."}}
@@ -434,35 +405,26 @@ async def recommend(request: Request):
         all_games = body.get("games", [])
         custom_query = body.get("custom_query")  # Может быть None или строка
 
-        # Санитизация пользовательского запроса
         custom_query = sanitize_custom_query(custom_query)
 
-        # НОВОЕ: Достаем историю рекомендаций
         already_recommended = body.get("already_recommended", [])
-        
-        # 1. Подготовка данных: расширенная выборка для разнообразия
-        # Берем топ-10 по времени + 10 случайных из топ-100 для разнообразия
+
         top_played = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)
         top_10 = top_played[:10]
 
-        # Добавляем случайные игры из топ-100 (исключая топ-10)
         import random
         candidates = top_played[10:100] if len(top_played) > 10 else []
         random_picks = random.sample(candidates, min(10, len(candidates))) if candidates else []
 
         combined = top_10 + random_picks
         core_names = ", ".join([g['name'] for g in combined])
-        
-        # 2. Исключения: игры, которые уже есть (берем топ 300, чтобы не советовал их)
+
         exclusions = sorted(all_games, key=lambda x: x.get('playtime_forever', 0), reverse=True)[:300]
         owned_names = ", ".join([g['name'] for g in exclusions])
 
-        # НОВОЕ: Формируем дополнительное правило, если история не пустая
         history_rule = f"\n2. ТАКЖЕ ЗАПРЕЩЕНО советовать эти игры (ты их уже рекомендовал ранее): {', '.join(already_recommended)}." if already_recommended else ""
 
-        # 3. Промпт с жестким требованием вернуть JSON - адаптируется под наличие custom_query
         if custom_query:
-            # Если пользователь ввел запрос - ДЕЛАЕМ ЕГО ГЛАВНЫМ ПРИОРИТЕТОМ
             prompt = f"""
 ГЛАВНЫЙ ПРИОРИТЕТ: Пользователь явно попросил: '{custom_query}'. ТВОЯ ЗАДАЧА №1 — порекомендовать 5 игр, которые ИДЕАЛЬНО И СТРОГО соответствуют этому запросу (например, если он просит гонки - ты ОБЯЗАН выдать только гонки, если просит хоррор - только хоррор).
 
@@ -526,28 +488,24 @@ async def recommend(request: Request):
             )
             
             result = resp.json()
-            
-            # Обработка ошибок от самого сервиса VseGPT
+
             if "error" in result:
                 err_msg = result['error'].get('message', 'Неизвестная ошибка')
                 logger.error(f"Ошибка VseGPT API: {err_msg}")
                 print(f"Ошибка API VseGPT: {err_msg}")
                 return {"content": {"error": "Ошибка на сервере ИИ. Проверьте консоль."}}
 
-            # Успешный ответ
             if "choices" in result and len(result["choices"]) > 0:
                 raw_text = result['choices'][0]['message']['content'].strip()
-                print(f"ИИ ответил:\n{raw_text}") # Выводим в терминал для проверки
-                
-                # Очищаем текст от Markdown тегов (ИИ любит оборачивать JSON в ```json ... ```)
+                print(f"ИИ ответил:\n{raw_text}")
+
                 clean_text = re.sub(r"^```json", "", raw_text, flags=re.MULTILINE)
                 clean_text = re.sub(r"^```", "", clean_text, flags=re.MULTILINE).strip()
-                
+
                 try:
-                    # Превращаем текст в настоящий массив Python
                     ai_recommendations = json.loads(clean_text)
                     recs = []
-                    
+
                     for item in ai_recommendations:
                         g_name = item.get("name", "")
                         based_on = item.get("based_on", "")
@@ -564,7 +522,6 @@ async def recommend(request: Request):
                                 "image_url": f"https://cdn.akamai.steamstatic.com/steam/apps/{real_id}/header.jpg"
                             })
 
-                    # Возвращаем только топ-3 из 5
                     if len(recs) > 0:
                         return {"content": {"recommendations": recs[:3]}}
                     else:
@@ -584,13 +541,11 @@ async def recommend(request: Request):
 
 @app.post("/api/recommend-selected")
 async def recommend_selected(request: Request):
-    # Проверка прав доступа к AI
     session_token = request.headers.get("X-Session-Token")
     if not ai_config.get("enabled_for_all", True):
         if not is_admin(session_token):
             return {"content": {"error": "AI рекомендации временно недоступны"}}
 
-    # Проверка rate limit
     client_ip = request.client.host
     if not check_rate_limit(client_ip):
         return {"content": {"error": "Слишком много запросов. Подождите минуту и попробуйте снова."}}
@@ -842,8 +797,8 @@ async def login(request: Request): # Обязательно добавляем (
     params = {
         "openid.ns": "http://specs.openid.net/auth/2.0",
         "openid.mode": "checkid_setup",
-        "openid.return_to": f"{current_domain}/auth", # Используем динамический домен
-        "openid.realm": f"{current_domain}",          # Используем динамический домен
+        "openid.return_to": f"{current_domain}/auth",
+        "openid.realm": f"{current_domain}",
         "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
         "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
     }
@@ -878,15 +833,12 @@ async def auth(request: Request):
                         player = players[0]
                         # Сохраняем реальное имя
                         user_name = player.get('personaname', 'Steam User')
-                        # Сохраняем самую четкую аватарку
                         user_avatar = player.get('avatarfull') or player.get('avatarmedium') or user_avatar
                 else:
                     print(f"Steam API Error: {resp.status_code}")
             except Exception as e:
-                # Теперь эта ошибка не вылетит из-за api_url, так как она определена выше
                 print(f"Auth Error: {e}")
 
-        # 4. Сохраняем всё в куки
         resp = RedirectResponse("/")
         resp.set_cookie("user_steam_id", sid, max_age=2592000)
         resp.set_cookie("user_name", quote(user_name), max_age=2592000)

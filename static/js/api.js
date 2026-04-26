@@ -176,7 +176,6 @@ async function getAI() {
         return;
     }
 
-    // Проверка: блокируем повторный запрос пока идет обработка
     if (window.aiProcessing) {
         return;
     }
@@ -185,13 +184,10 @@ async function getAI() {
     block.style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    // Получаем значение из текстового поля
     const customQuery = document.getElementById('ai-search-query')?.value.trim() || '';
 
-    // ОТЛАДКА: Выводим в консоль что отправляем
     console.log("Отправляем запрос ИИ:", customQuery);
 
-    // Используем запрос как ключ для истории (или 'default' если пусто)
     const historyKey = customQuery || 'default';
     let historyForCurrentQuery = window.recommendedHistory[historyKey] || [];
 
