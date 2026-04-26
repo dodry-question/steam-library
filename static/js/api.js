@@ -17,9 +17,15 @@ function showNotification(message, type = 'info', percent = 0, subtext = '') {
     if (type === 'warning') bgColor = 'rgba(184, 134, 11, 0.85)'; // темно-желтый
     if (type === 'success') bgColor = 'rgba(0, 100, 0, 0.85)'; // темно-зеленый
 
+    // Кнопка закрытия для ошибок и предупреждений
+    const closeBtn = (type === 'error' || type === 'warning')
+        ? '<span class="notification-close" onclick="window.hideNotification(0)">&times;</span>'
+        : '';
+
     if (type === 'progress') {
         statusBar.innerHTML = `
             <div class="price-sync-container" style="background: ${bgColor};">
+                ${closeBtn}
                 <div class="price-sync-label">
                     <span>${message}</span>
                     <span class="price-sync-percent">${percent}%</span>
@@ -33,6 +39,7 @@ function showNotification(message, type = 'info', percent = 0, subtext = '') {
     } else {
         statusBar.innerHTML = `
             <div class="price-sync-container" style="background: ${bgColor};">
+                ${closeBtn}
                 <div class="price-sync-label">
                     <span>${message}</span>
                 </div>
