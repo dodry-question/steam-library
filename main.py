@@ -720,7 +720,7 @@ async def resolve_steam_id(input_str: str) -> Optional[str]:
         # Если ввели просто текст или кусок ссылки
         clean = input_str.split('/')[-1]
         
-    # 3. Делаем запрос к Steam для расшифровки кастомного имени
+    # 3. Делаем  запрос к Steam для расшифровки кастомного имени
     url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v0001/?key={STEAM_API_KEY}&vanityurl={clean}"
     async with httpx.AsyncClient() as client:
         try:
