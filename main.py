@@ -694,7 +694,7 @@ async def get_games_list(request: Request, user_id: Optional[str] = None):
 async def resolve_steam_id(input_str: str) -> Optional[str]:
     input_str = input_str.strip().strip('/')
     
-    # 1. Ищем 17-значный SteamID64 (он всегда начинается с 7656119...) в любом месте строки
+    # 1. Ищем 17-значный SteamID64 ( он всегда начинается с 7656119...) в любом месте строки
     match_64 = re.search(r'\b(7656119[0-9]{10})\b', input_str)
     if match_64:
         return match_64.group(1)
