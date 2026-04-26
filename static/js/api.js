@@ -3,6 +3,56 @@
 let syncController = null;
 
 /**
+ * Показать уведомление в мини-окне загрузки
+ * @param {string} message - текст сообщения
+ * @param {string} type - тип: 'info', 'success', 'warning', 'error', 'progress'
+ * @param {number} percent - процент для прогресс-бара (только для type='progress')
+ * @param {string} subtext - дополнительный текст снизу
+ */
+function showNotification(message, type = 'info', percent = 0, subtext = '') {
+    const statusBar = document.getElementById('status-bar');
+
+    let bgColor = 'rgba(23, 26, 33, 0.85)'; // default
+    if (type === 'error') bgColor = 'rgba(139, 0, 0, 0.85)'; // темно-красный
+    if (type === 'warning') bgColor = 'rgba(184, 134, 11, 0.85)'; // темно-желтый
+    if (type === 'success') bgColor = 'rgba(0, 100, 0, 0.85)'; // темно-зеленый
+
+    if (type === 'progress') {
+        statusBar.innerHTML = `
+            <div class="price-sync-container" style="background: ${bgColor};">
+                <div class="price-sync-label">
+                    <span>${message}</span>
+                    <span class="price-sync-percent">${percent}%</span>
+                </div>
+                <div class="price-sync-bar">
+                    <div class="price-sync-progress" style="width: ${percent}%"></div>
+                </div>
+                ${subtext ? `<div class="price-sync-count">${subtext}</div>` : ''}
+            </div>
+        `;
+    } else {
+        statusBar.innerHTML = `
+            <div class="price-sync-container" style="background: ${bgColor};">
+                <div class="price-sync-label">
+                    <span>${message}</span>
+                </div>
+                ${subtext ? `<div class="price-sync-count">${subtext}</div>` : ''}
+            </div>
+        `;
+    }
+}
+
+/**
+ * Скрыть уведомление
+ */
+function hideNotification(delay = 5000) {
+    const statusBar = document.getElementById('status-bar');
+    setTimeout(() => {
+        statusBar.innerHTML = '';
+    }, delay);
+}
+
+/**
  * Загружает библиотеку игр (свою или друга)
  */
 async function loadLibrary(isFriend = false) {
@@ -45,7 +95,7 @@ async function loadLibrary(isFriend = false) {
         window.clearSelection();
     }
 
-    statusBar.innerHTML = '<span class="spinner"></span> Запрашиваем список у Steam...';
+    showNotification('Запрашиваем список у Steam...', 'info');
 
     try {
         let url = '/api/get-games-list';
@@ -70,22 +120,22 @@ async function loadLibrary(isFriend = false) {
             document.getElementById('copy-btn').style.display = 'inline-block';
             document.querySelector('.search-container').style.display = 'flex';
 
-            statusBar.innerText = `Найдено ${total} игр. Отрисовываем...`;
+            showNotification('Отрисовываем игры...', 'info', 0, `Найдено ${total} игр`);
             window.loadedGames.forEach(g => window.addCard(g));
 
             if (total > 100) {
-                statusBar.innerHTML = `Список готов. <span style="color:#a4d007">Цены и жанры подгружаются в фоне...</span>`;
+                showNotification('Список готов', 'success', 0, 'Цены и жанры подгружаются в фоне...');
             } else {
-                statusBar.innerHTML = `Загружено ${total} игр.`;
+                showNotification('Загрузка завершена', 'success', 0, `Загружено ${total} игр`);
             }
 
             startBackgroundSync(data.games);
         } else if (data.error) {
-            statusBar.innerHTML = `<span style="color: #ff5c5c;">Ошибка: ${data.error}</span>`;
+            showNotification('Ошибка', 'error', 0, data.error);
             window.currentLoadedTarget = null;
         }
     } catch (e) {
-        statusBar.innerText = "Ошибка соединения";
+        showNotification('Ошибка соединения', 'error');
         window.currentLoadedTarget = null;
     } finally {
         window.isProcessing = false;
@@ -96,7 +146,6 @@ async function loadLibrary(isFriend = false) {
  * Фоновая синхронизация цен и жанров
  */
 async function startBackgroundSync(rawList) {
-    const statusBar = document.getElementById('status-bar');
     const total = rawList.length;
     let processedCount = 0;
 
@@ -118,6 +167,10 @@ async function startBackgroundSync(rawList) {
             signal: syncController.signal
         });
 
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        }
+
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -126,17 +179,8 @@ async function startBackgroundSync(rawList) {
             const { done, value } = await reader.read();
 
             if (done) {
-                statusBar.innerHTML = `
-                    <div class="price-sync-container">
-                        <div class="price-sync-label">
-                            <span>Загрузка завершена</span>
-                        </div>
-                    </div>
-                `;
-                setTimeout(() => {
-                    if(statusBar.innerHTML.includes('Загрузка завершена'))
-                        statusBar.innerHTML = '';
-                }, 5000);
+                showNotification('Загрузка завершена', 'success');
+                hideNotification(5000);
                 break;
             }
 
@@ -151,18 +195,7 @@ async function startBackgroundSync(rawList) {
                     processedCount++;
 
                     const percent = Math.round((processedCount / total) * 100);
-                    statusBar.innerHTML = `
-                        <div class="price-sync-container">
-                            <div class="price-sync-label">
-                                <span>Загрузка цен и скидок</span>
-                                <span class="price-sync-percent">${percent}%</span>
-                            </div>
-                            <div class="price-sync-bar">
-                                <div class="price-sync-progress" style="width: ${percent}%"></div>
-                            </div>
-                            <div class="price-sync-count">${processedCount} из ${total} игр</div>
-                        </div>
-                    `;
+                    showNotification('Загрузка цен и скидок', 'progress', percent, `${processedCount} из ${total} игр`);
 
                     const idx = window.loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
                     if (idx !== -1) window.loadedGames[idx] = fullData;
@@ -176,9 +209,12 @@ async function startBackgroundSync(rawList) {
     } catch (e) {
         if (e.name === 'AbortError') {
             console.log('Фоновая загрузка остановлена пользователем.');
+            showNotification('Загрузка остановлена', 'warning');
+            hideNotification(3000);
         } else {
             console.error("Ошибка фоновой синхронизации:", e);
-            statusBar.innerHTML = `<span style="color: #ff6c6c;">Фоновая загрузка прервана</span>`;
+            showNotification('Ошибка загрузки', 'error', 0, e.message || 'Проверьте соединение');
+            hideNotification(7000);
         }
     }
 }
@@ -188,7 +224,8 @@ async function startBackgroundSync(rawList) {
  */
 async function getAI() {
     if (window.loadedGames.length === 0) {
-        alert("Сначала загрузите игры!");
+        showNotification('Сначала загрузите игры', 'warning');
+        hideNotification(3000);
         return;
     }
 
@@ -255,8 +292,9 @@ async function getAI() {
         }
 
         if (data.content.error) {
-            block.innerHTML = `<span style="color: #ffcc00;">Сообщение от ИИ: ${data.content.error}</span>`;
-            window.aiProcessing = false; // Разблокируем при ошибке
+            showNotification('Ошибка AI', 'warning', 0, data.content.error);
+            hideNotification(5000);
+            window.aiProcessing = false;
             return;
         }
 
@@ -296,7 +334,7 @@ async function getAI() {
             html += '</div>';
             block.innerHTML = html;
 
-            window.aiProcessing = false; // Разблокируем после успешного ответа
+            window.aiProcessing = false;
 
             try {
                 if (typeof window.clearSelection === "function") {
@@ -306,13 +344,15 @@ async function getAI() {
                 console.warn("Ошибка интерфейса при очистке (игнорируем):", cleanupError);
             }
         } else {
-            block.innerHTML = 'ИИ не смог подобрать игры. Попробуйте сменить настроение.';
-            window.aiProcessing = false; // Разблокируем если нет результатов
+            showNotification('Нет результатов', 'warning', 0, 'ИИ не смог подобрать игры');
+            hideNotification(5000);
+            window.aiProcessing = false;
         }
     } catch(e) {
         console.error("Детальная ошибка во фронтенде:", e);
-        block.innerHTML = `<span style="color: #ff5c5c;">Ошибка: <b>${e.message}</b></span><br><span style="font-size: 12px; color: gray;">Откройте консоль браузера (F12) для деталей.</span>`;
-        window.aiProcessing = false; // Разблокируем при ошибке
+        showNotification('Ошибка AI', 'error', 0, e.message);
+        hideNotification(7000);
+        window.aiProcessing = false;
     }
 }
 
@@ -325,8 +365,8 @@ async function loginWithUrl() {
     const btn = document.getElementById('auth-url-btn');
 
     if (!input) {
-        errorDiv.innerText = "Пожалуйста, введите ссылку";
-        errorDiv.style.display = 'block';
+        showNotification('Введите ссылку на профиль', 'warning');
+        hideNotification(3000);
         return;
     }
 
@@ -346,12 +386,12 @@ async function loginWithUrl() {
         if (data.success) {
             window.location.reload();
         } else {
-            errorDiv.innerText = data.error || "Произошла ошибка";
-            errorDiv.style.display = 'block';
+            showNotification('Ошибка авторизации', 'error', 0, data.error || 'Проверьте ссылку');
+            hideNotification(5000);
         }
     } catch (e) {
-        errorDiv.innerText = "Ошибка соединения с сервером";
-        errorDiv.style.display = 'block';
+        showNotification('Ошибка соединения', 'error', 0, 'Проверьте интернет-соединение');
+        hideNotification(5000);
     } finally {
         btn.innerText = "Привязать профиль";
         btn.disabled = false;
@@ -362,3 +402,5 @@ async function loginWithUrl() {
 window.loadLibrary = loadLibrary;
 window.getAI = getAI;
 window.loginWithUrl = loginWithUrl;
+window.showNotification = showNotification;
+window.hideNotification = hideNotification;
