@@ -1,6 +1,8 @@
 // api.js - Все запросы к серверу
 
 let syncController = null;
+let currentNotification = null; // Текущее уведомление для восстановления
+let isBackgroundSyncActive = false; // Флаг активной фоновой загрузки
 
 /**
  * Показать уведомление в мини-окне загрузки
@@ -8,9 +10,15 @@ let syncController = null;
  * @param {string} type - тип: 'info', 'success', 'warning', 'error', 'progress'
  * @param {number} percent - процент для прогресс-бара (только для type='progress')
  * @param {string} subtext - дополнительный текст снизу
+ * @param {boolean} saveState - сохранить состояние для восстановления
  */
-function showNotification(message, type = 'info', percent = 0, subtext = '') {
+function showNotification(message, type = 'info', percent = 0, subtext = '', saveState = false) {
     const statusBar = document.getElementById('status-bar');
+
+    // Сохраняем текущее состояние если это фоновая загрузка
+    if (saveState && type === 'progress') {
+        currentNotification = { message, type, percent, subtext };
+    }
 
     let bgColor = 'rgba(23, 26, 33, 0.85)'; // default
     if (type === 'error') bgColor = 'rgba(139, 0, 0, 0.85)'; // темно-красный
@@ -46,6 +54,21 @@ function showNotification(message, type = 'info', percent = 0, subtext = '') {
                 ${subtext ? `<div class="price-sync-count">${subtext}</div>` : ''}
             </div>
         `;
+    }
+}
+
+/**
+ * Восстановить сохраненное уведомление (например, прогресс загрузки)
+ */
+function restoreNotification() {
+    if (currentNotification && isBackgroundSyncActive) {
+        showNotification(
+            currentNotification.message,
+            currentNotification.type,
+            currentNotification.percent,
+            currentNotification.subtext,
+            false
+        );
     }
 }
 
@@ -165,6 +188,7 @@ async function startBackgroundSync(rawList) {
     });
 
     syncController = new AbortController();
+    isBackgroundSyncActive = true;
 
     try {
         const resp = await fetch('/api/games-batch', {
@@ -186,6 +210,8 @@ async function startBackgroundSync(rawList) {
             const { done, value } = await reader.read();
 
             if (done) {
+                isBackgroundSyncActive = false;
+                currentNotification = null;
                 showNotification('Загрузка завершена', 'success');
                 hideNotification(5000);
                 break;
@@ -202,7 +228,7 @@ async function startBackgroundSync(rawList) {
                     processedCount++;
 
                     const percent = Math.round((processedCount / total) * 100);
-                    showNotification('Загрузка цен и скидок', 'progress', percent, `${processedCount} из ${total} игр`);
+                    showNotification('Загрузка цен и скидок', 'progress', percent, `${processedCount} из ${total} игр`, true);
 
                     const idx = window.loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
                     if (idx !== -1) window.loadedGames[idx] = fullData;
@@ -214,6 +240,8 @@ async function startBackgroundSync(rawList) {
             }
         }
     } catch (e) {
+        isBackgroundSyncActive = false;
+        currentNotification = null;
         if (e.name === 'AbortError') {
             console.log('Фоновая загрузка остановлена пользователем.');
             showNotification('Загрузка остановлена', 'warning');
@@ -240,6 +268,8 @@ async function getAI() {
         return;
     }
 
+    // Не показываем уведомление если идет фоновая загрузка
+    // Просто запускаем AI в фоне
     const block = document.getElementById('ai-block');
     block.style.display = 'block';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -272,7 +302,11 @@ async function getAI() {
     }
 
     block.innerHTML = `<span class="spinner"></span> ${loadingText}`;
-    window.aiProcessing = true; // Блокируем повторные запросы
+
+    // Показываем уведомление об ожидании AI в мини-окне
+    showNotification('Ожидание ответа AI...', 'info', 0, 'Обычно занимает 10-15 сек');
+
+    window.aiProcessing = true;
 
     try {
         const sessionToken = localStorage.getItem('session_token');
@@ -302,6 +336,7 @@ async function getAI() {
             showNotification('Ошибка AI', 'warning', 0, data.content.error);
             hideNotification(5000);
             window.aiProcessing = false;
+            restoreNotification(); // Восстанавливаем прогресс загрузки
             return;
         }
 
@@ -343,6 +378,9 @@ async function getAI() {
 
             window.aiProcessing = false;
 
+            // Восстанавливаем прогресс загрузки если она еще идет
+            restoreNotification();
+
             try {
                 if (typeof window.clearSelection === "function") {
                     window.clearSelection();
@@ -354,12 +392,14 @@ async function getAI() {
             showNotification('Нет результатов', 'warning', 0, 'ИИ не смог подобрать игры');
             hideNotification(5000);
             window.aiProcessing = false;
+            restoreNotification();
         }
     } catch(e) {
         console.error("Детальная ошибка во фронтенде:", e);
         showNotification('Ошибка AI', 'error', 0, e.message);
         hideNotification(7000);
         window.aiProcessing = false;
+        restoreNotification();
     }
 }
 
@@ -411,3 +451,4 @@ window.getAI = getAI;
 window.loginWithUrl = loginWithUrl;
 window.showNotification = showNotification;
 window.hideNotification = hideNotification;
+window.restoreNotification = restoreNotification;
