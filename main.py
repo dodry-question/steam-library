@@ -184,13 +184,27 @@ async def search_steam_game(client: httpx.AsyncClient, name: str) -> Optional[in
             if data.get("total") > 0:
                 items = data["items"]
 
-                # Сначала ищем точное совпадение
+                # Фильтр 1: Исключаем саундтреки и музыку по ключевым словам
+                excluded_keywords = ["soundtrack", "ost", "music", "theme", "score"]
+                filtered_items = []
                 for item in items:
+                    item_name_lower = item["name"].lower()
+                    # Проверяем что это игра (type == 'app') и нет исключенных слов
+                    if item.get("type") == "app" and not any(kw in item_name_lower for kw in excluded_keywords):
+                        filtered_items.append(item)
+
+                # Если после фильтрации ничего не осталось, используем оригинальный список
+                if not filtered_items:
+                    filtered_items = items
+
+                # Фильтр 2: Ищем точное совпадение названия
+                for item in filtered_items:
                     item_name_clean = re.sub(r'[^\w\s]', '', item["name"]).lower()
                     if item_name_clean == clean_name:
                         return item["id"]
 
-                return items[0]["id"]
+                # Фильтр 3: Если точного совпадения нет, берем самый популярный (первый в списке после фильтрации)
+                return filtered_items[0]["id"]
     except Exception as e:
         logger.warning(f"Ошибка поиска игры '{name}': {e}")
     return None
