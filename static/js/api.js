@@ -301,8 +301,7 @@ async function getAI() {
         loadingText = `ИИ подбирает игры, похожие на: <b>${targetGamesArray.join(', ')}</b>...`;
     }
 
-    // Не показываем спиннер в блоке AI, только в мини-окне
-    block.innerHTML = '';
+    block.innerHTML = `<span class="spinner"></span> ${loadingText}`;
 
     // Показываем уведомление об ожидании AI в мини-окне
     showNotification('Ожидание ответа AI...', 'info', 0, 'Обычно занимает 10-15 сек');
