@@ -50,4 +50,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Привязка профиля по нажатию Enter
+    const authUrlInput = document.getElementById('auth-url-input');
+    if (authUrlInput) {
+        authUrlInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                window.loginWithUrl();
+            }
+        });
+    }
+
 });

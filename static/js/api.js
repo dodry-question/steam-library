@@ -126,10 +126,16 @@ async function startBackgroundSync(rawList) {
             const { done, value } = await reader.read();
 
             if (done) {
-                statusBar.innerHTML = `Загрузка завершена! Обработано деталей: ${processedCount} из ${total}`;
+                statusBar.innerHTML = `
+                    <div class="price-sync-container">
+                        <div class="price-sync-label">
+                            <span>Загрузка завершена</span>
+                        </div>
+                    </div>
+                `;
                 setTimeout(() => {
-                    if(statusBar.innerText.includes('Загрузка завершена'))
-                        statusBar.innerText = '';
+                    if(statusBar.innerHTML.includes('Загрузка завершена'))
+                        statusBar.innerHTML = '';
                 }, 5000);
                 break;
             }
@@ -144,9 +150,19 @@ async function startBackgroundSync(rawList) {
                     const fullData = JSON.parse(line);
                     processedCount++;
 
-                    if (total > 100 && processedCount % 5 === 0) {
-                        statusBar.innerHTML = `Синхронизация цен... ${processedCount} / ${total}`;
-                    }
+                    const percent = Math.round((processedCount / total) * 100);
+                    statusBar.innerHTML = `
+                        <div class="price-sync-container">
+                            <div class="price-sync-label">
+                                <span>Загрузка цен и скидок</span>
+                                <span class="price-sync-percent">${percent}%</span>
+                            </div>
+                            <div class="price-sync-bar">
+                                <div class="price-sync-progress" style="width: ${percent}%"></div>
+                            </div>
+                            <div class="price-sync-count">${processedCount} из ${total} игр</div>
+                        </div>
+                    `;
 
                     const idx = window.loadedGames.findIndex(g => g.steam_id === fullData.steam_id);
                     if (idx !== -1) window.loadedGames[idx] = fullData;
